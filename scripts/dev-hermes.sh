@@ -15,6 +15,11 @@ SESSION=hermes-dev
 
 if [[ ${1:-} == stop ]]; then tmux kill-session -t $SESSION 2>/dev/null && echo "stopped"; exit 0; fi
 
+# Local fixes for upstream bugs (see patches/). Applied once; skipped if already in the checkout.
+for p in "$ROOT"/patches/hermes-agent-*.patch(N); do
+  if git -C "$SRC" apply --check "$p" 2>/dev/null; then git -C "$SRC" apply "$p" && echo "applied $(basename $p)"; fi
+done
+
 mkdir -p "$HOME_DIR"; chmod 700 "$HOME_DIR"
 if [[ ! -f $HOME_DIR/.env ]]; then
   umask 077
