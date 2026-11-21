@@ -14,6 +14,7 @@ public protocol SpeechToText: Sendable {
 public struct STTError: LocalizedError, Sendable {
     public let message: String
     public var errorDescription: String? { message }
+    public init(message: String) { self.message = message }
 }
 
 /// OpenAI-compatible /v1/audio/transcriptions (drive mode's default path: model gpt-transcribe, language en, prompt).

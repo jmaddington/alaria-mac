@@ -1,0 +1,299 @@
+import Charts
+import HermesKit
+import SwiftUI
+
+// MARK: - Tools
+
+struct ToolsList: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        @Bindable var lib = model.library
+        Group {
+            if model.client?.hasDashboard != true { NeedsDashboard(feature: "Tools") }
+            else {
+                List(selection: $lib.toolSelection) {
+                    ForEach(lib.toolsets) { t in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t.label ?? t.name).font(.body.weight(.medium))
+                                Text(t.description ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(get: { t.enabled ?? false }, set: { v in
+                                guard let c = model.client else { return }
+                                model.run("Toolset") { try await c.setToolset(t.name, enabled: v); await lib.loadToolsets() }
+                            })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                        }
+                        .opacity(t.available == false ? 0.5 : 1)
+                        .tag(Optional(t.name))
+                    }
+                }
+                .listStyle(.inset).scrollContentBackground(.hidden)
+                .task { await lib.loadToolsets() }
+            }
+        }
+        .navigationTitle("Tools")
+    }
+}
+
+struct ToolDetail: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        if let t = model.library.toolsets.first(where: { $0.name == model.library.toolSelection }) {
+            Form {
+                SwiftUI.Section {
+                    LabeledContent("Toolset") { Text(t.name).textSelection(.enabled) }
+                    LabeledContent("Status") {
+                        HStack(spacing: 6) {
+                            StatusDot(color: t.enabled == true ? .green : .secondary)
+                            Text(t.enabled == true ? "Enabled" : "Disabled")
+                        }
+                    }
+                    if t.configured == false { Label("Needs setup on the Hermes host", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
+                    if t.available == false { Label("Not available on this host", systemImage: "nosign").foregroundStyle(.secondary) }
+                } footer: { Text(t.description ?? "") }
+                SwiftUI.Section("\(t.tools?.count ?? 0) tools") {
+                    ForEach(t.tools ?? [], id: \.self) { name in
+                        Label(name, systemImage: "function").font(.system(.body, design: .monospaced))
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle(t.label ?? t.name)
+        } else {
+            EmptyState(symbol: "wrench.and.screwdriver", title: "Select a toolset", message: "Toolsets are groups of tools Hermes can use. Turn them on or off from the list.")
+        }
+    }
+}
+
+// MARK: - Memory
+
+struct MemoryList: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        @Bindable var lib = model.library
+        Group {
+            if model.client?.hasDashboard != true { NeedsDashboard(feature: "Memory") }
+            else {
+                List(selection: $lib.memorySelection) {
+                    SwiftUI.Section("Built-in") {
+                        Label("Memory & Profile", systemImage: "brain.head.profile").tag(Optional("builtin"))
+                    }
+                    SwiftUI.Section("Providers") {
+                        ForEach(lib.memory?.providers ?? []) { p in
+                            HStack {
+                                Text(p.name.capitalized)
+                                Spacer()
+                                if lib.memory?.active == p.name { Pill(text: "Active", color: .green) }
+                                else if p.available == false { Pill(text: "Unavailable") }
+                            }
+                            .tag(Optional(p.name))
+                        }
+                    }
+                }
+                .listStyle(.inset).scrollContentBackground(.hidden)
+                .task { await lib.loadMemory() }
+            }
+        }
+        .navigationTitle("Memory")
+    }
+}
+
+struct MemoryDetail: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var confirm: String?
+    var body: some View {
+        let lib = model.library
+        Group {
+            if lib.memorySelection == "builtin" || lib.memorySelection == nil {
+                Form {
+                    SwiftUI.Section {
+                        LabeledContent("Active provider") { Text(lib.memory?.active.flatMap { $0.isEmpty ? nil : $0.capitalized } ?? "Built-in only") }
+                        ForEach((lib.memory?.builtinFiles ?? [:]).sorted(by: { $0.key < $1.key }), id: \.key) { k, v in
+                            LabeledContent(k == "user" ? "Profile entries" : "Memory entries") { Text("\(v)").monospacedDigit() }
+                        }
+                    } footer: { Text("Hermes keeps what it learns about you and your work in its memory. It grows on its own as you talk.") }
+                    SwiftUI.Section {
+                        Button("Forget Memories…", role: .destructive) { confirm = "memory" }
+                        Button("Forget Profile…", role: .destructive) { confirm = "user" }
+                        Button("Forget Everything…", role: .destructive) { confirm = "all" }
+                    }
+                }
+                .formStyle(.grouped)
+            } else if let p = lib.memory?.providers?.first(where: { $0.name == lib.memorySelection }) {
+                Form {
+                    SwiftUI.Section {
+                        LabeledContent("Status") { Text(p.status?.capitalized ?? "—") }
+                        LabeledContent("Configured") { Text(p.configured == true ? "Yes" : "No") }
+                    } footer: { Text(p.description ?? "") }
+                    SwiftUI.Section {
+                        Button(lib.memory?.active == p.name ? "In Use" : "Use \(p.name.capitalized)") {
+                            guard let c = model.client else { return }
+                            model.run("Memory provider") { try await c.setMemoryProvider(p.name); await lib.loadMemory() }
+                        }
+                        .disabled(lib.memory?.active == p.name || p.available == false)
+                    }
+                }
+                .formStyle(.grouped)
+            } else { Color.clear }
+        }
+        .navigationTitle("Memory")
+        .confirmationDialog("This can't be undone.", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
+            Button("Forget", role: .destructive) {
+                guard let t = confirm, let c = model.client else { return }
+                model.run("Reset memory") { try await c.resetMemory(t); await lib.loadMemory(); model.flash("Done") }
+            }
+        }
+    }
+}
+
+// MARK: - Usage
+
+struct UsagePeriods: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        @Bindable var lib = model.library
+        Group {
+            if model.client?.hasDashboard != true { NeedsDashboard(feature: "Usage") }
+            else {
+                List(selection: Binding(get: { Optional(lib.usageDays) }, set: { lib.usageDays = $0 ?? 7 })) {
+                    ForEach([(7, "Last 7 Days"), (30, "Last 30 Days"), (90, "Last 90 Days"), (365, "Last Year")], id: \.0) { d, t in
+                        Label(t, systemImage: "calendar").tag(Optional(d))
+                    }
+                }
+                .listStyle(.inset).scrollContentBackground(.hidden)
+            }
+        }
+        .navigationTitle("Usage")
+    }
+}
+
+struct UsageDetail: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var report: UsageReport?
+    var body: some View {
+        Group {
+            if model.client?.hasDashboard != true { Color.clear }
+            else if let r = report {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        HStack(spacing: 14) {
+                            Stat(title: "Input tokens", value: (r.totals?.totalInput ?? 0).compact)
+                            Stat(title: "Output tokens", value: (r.totals?.totalOutput ?? 0).compact)
+                            Stat(title: "Reasoning", value: (r.totals?.totalReasoning ?? 0).compact)
+                            Stat(title: "Est. cost", value: (r.totals?.totalEstimatedCost ?? 0).formatted(.currency(code: "USD")))
+                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Tokens per day").font(.headline)
+                            Chart(r.daily ?? []) { d in
+                                BarMark(x: .value("Day", d.day), y: .value("Tokens", d.inputTokens ?? 0))
+                                    .foregroundStyle(by: .value("Kind", "Input"))
+                                BarMark(x: .value("Day", d.day), y: .value("Tokens", d.outputTokens ?? 0))
+                                    .foregroundStyle(by: .value("Kind", "Output"))
+                            }
+                            .chartForegroundStyleScale(["Input": Theme.accent.opacity(0.55), "Output": Theme.accent])
+                            .frame(height: 220)
+                            .overlay { if (r.daily ?? []).isEmpty { Text("No activity in this period").foregroundStyle(.secondary) } }
+                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("By model").font(.headline)
+                            ForEach(r.byModel ?? []) { m in
+                                HStack {
+                                    Text(m.model).font(.body.weight(.medium))
+                                    Spacer()
+                                    Text("\((m.inputTokens ?? 0).compact) in · \((m.outputTokens ?? 0).compact) out · \(m.sessions ?? 0) chats")
+                                        .foregroundStyle(.secondary).monospacedDigit()
+                                }
+                                .padding(.vertical, 6)
+                                Divider()
+                            }
+                        }
+                    }
+                    .padding(32)
+                    .frame(maxWidth: 900, alignment: .leading)
+                }
+            } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+        }
+        .navigationTitle("Usage")
+        .task(id: model.library.usageDays) {
+            guard let c = model.client, c.hasDashboard else { return }
+            do { report = try await c.usage(days: model.library.usageDays) } catch { model.flash("Couldn't load usage: \(error.localizedDescription)") }
+        }
+    }
+}
+
+struct Stat: View {
+    var title: String
+    var value: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.caption).foregroundStyle(.secondary).textCase(.uppercase).tracking(0.4)
+            Text(value).font(.system(size: 26, weight: .semibold, design: .rounded)).monospacedDigit()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous).fill(.quaternary.opacity(0.45)))
+    }
+}
+
+// MARK: - Logs
+
+struct LogFiles: View {
+    @Environment(AppModel.self) private var model
+    var body: some View {
+        @Bindable var lib = model.library
+        Group {
+            if model.client?.hasDashboard != true { NeedsDashboard(feature: "Logs") }
+            else {
+                List(selection: Binding(get: { Optional(lib.logFile) }, set: { lib.logFile = $0 ?? "agent" })) {
+                    ForEach([("agent", "Agent", "cpu"), ("errors", "Errors", "exclamationmark.octagon"), ("gateway", "Gateway", "network")], id: \.0) { f, t, s in
+                        Label(t, systemImage: s).tag(Optional(f))
+                    }
+                }
+                .listStyle(.inset).scrollContentBackground(.hidden)
+            }
+        }
+        .navigationTitle("Logs")
+    }
+}
+
+struct LogDetail: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var lines: [String] = []
+    @ViewState private var filter = ""
+    @ViewState private var live = true
+    var body: some View {
+        Group {
+            if model.client?.hasDashboard != true { Color.clear }
+            else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 1) {
+                            ForEach(Array(shown.enumerated()), id: \.offset) { i, l in
+                                Text(l).font(.system(size: 11.5, design: .monospaced))
+                                    .foregroundStyle(l.contains(" ERROR ") ? .red : l.contains(" WARNING ") ? .orange : .primary)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id(i)
+                            }
+                        }
+                        .padding(16)
+                    }
+                    .onChange(of: lines.count) { if live { proxy.scrollTo(shown.count - 1, anchor: .bottom) } }
+                }
+                .background(Color(nsColor: .textBackgroundColor))
+            }
+        }
+        .navigationTitle("Logs")
+        .searchable(text: $filter, prompt: "Filter")
+        .toolbar { ToolbarItem { Toggle(isOn: $live) { Label("Follow", systemImage: "arrow.down.to.line") }.help("Follow new lines") } }
+        .task(id: model.library.logFile) {
+            guard let c = model.client, c.hasDashboard else { return }
+            while !Task.isCancelled {
+                if live, let l = try? await c.logs(file: model.library.logFile, lines: 400) { lines = l }
+                try? await Task.sleep(for: .seconds(3))
+            }
+        }
+    }
+    private var shown: [String] { filter.isEmpty ? lines : lines.filter { $0.localizedCaseInsensitiveContains(filter) } }
+}

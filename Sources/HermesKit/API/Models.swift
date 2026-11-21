@@ -145,6 +145,7 @@ struct RunsEnvelope: Decodable { let runs: [CronRun] }
 public struct DeliveryTarget: Codable, Identifiable, Hashable, Sendable {
     public var id: String
     public var name: String
+    public init(id: String, name: String) { self.id = id; self.name = name }
 }
 struct TargetsEnvelope: Decodable { let targets: [DeliveryTarget] }
 
@@ -255,6 +256,9 @@ public struct ToolActivity: Identifiable, Hashable, Sendable {
     public var preview: String?
     public var state: State
     public enum State: Hashable, Sendable { case running, done, failed }
+    public init(id: String, name: String, preview: String?, state: State) {
+        self.id = id; self.name = name; self.preview = preview; self.state = state
+    }
 }
 
 public struct ApprovalRequest: Identifiable, Hashable, Sendable {
