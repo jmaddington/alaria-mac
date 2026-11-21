@@ -12,6 +12,13 @@ func check(_ name: String, _ body: () throws -> Void) {
     do { try body() } catch { failures.append("\(name): threw \(error)") }
 }
 
+/// Waits without blocking main: AVSpeechSynthesizer and friends call back on the main run loop.
+func waitPumpingRunLoop(timeout: TimeInterval = 300, _ isDone: () -> Bool) {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !isDone() && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+    if !isDone() { failures.append("\(current): timed out") }
+}
+
 private func rms(db: Double) -> Double { pow(10, db / 20) }
 private func run(_ v: inout VAD, _ segments: [(db: Double, frames: Int)]) -> [VAD.Event] {
     var out: [VAD.Event] = []
@@ -37,5 +44,6 @@ check("sentence splitter") {
 }
 
 runAPIChecks()
+runVoiceChecks()
 
 if failures.isEmpty { print("All checks passed") } else { failures.forEach { print("FAIL", $0) }; exit(1) }

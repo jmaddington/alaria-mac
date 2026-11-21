@@ -28,12 +28,12 @@ func runAPIChecks() {
     }
 
     guard let client = devClient() else { print("(skipping live API checks: no dev/hermes-home/.env)"); return }
-    let sem = DispatchSemaphore(value: 0)
+    var done = false
     Task {
         await liveChecks(client)
-        sem.signal()
+        done = true
     }
-    sem.wait()
+    waitPumpingRunLoop { done }
 }
 
 func devClient() -> HermesClient? {
