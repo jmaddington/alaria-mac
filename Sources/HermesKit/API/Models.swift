@@ -1,0 +1,282 @@
+import Foundation
+
+// AIDEV-NOTE: shapes verified against hermes-agent main @52b5271 with curl (see docs/agents/api-notes.md).
+// Decoder uses convertFromSnakeCase, so `started_at` -> startedAt. Keep everything optional unless Hermes
+// guarantees it: fields come and go between versions and a single strict field fails the whole list.
+
+public struct HermesSession: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var source: String?
+    public var model: String?
+    public var title: String?
+    public var startedAt: Double?
+    public var endedAt: Double?
+    public var endReason: String?
+    public var messageCount: Int?
+    public var toolCallCount: Int?
+    public var inputTokens: Int?
+    public var outputTokens: Int?
+    public var reasoningTokens: Int?
+    public var estimatedCostUsd: Double?
+    public var parentSessionId: String?
+    public var lastActive: Double?
+    public var preview: String?
+    public var pinned: Bool?
+    public var archived: Bool?
+    public var hidden: Bool?
+
+    public var displayTitle: String {
+        if let t = title, !t.isEmpty { return t }
+        if let p = preview, !p.isEmpty { return String(p.prefix(60)) }
+        return "New Chat"
+    }
+    public var activityDate: Date { Date(timeIntervalSince1970: lastActive ?? startedAt ?? 0) }
+}
+
+struct SessionEnvelope: Decodable { let session: HermesSession }
+struct ListEnvelope<T: Decodable>: Decodable { let data: [T]; let hasMore: Bool? }
+
+public struct HermesMessage: Codable, Identifiable, Hashable, Sendable {
+    public var id: Int
+    public var role: String
+    public var content: String?
+    public var toolCallId: String?
+    public var toolCalls: JSONValue?
+    public var toolName: String?
+    public var timestamp: Double?
+    public var finishReason: String?
+    public var reasoning: String?
+    public var reasoningContent: String?
+    public var displayKind: String?
+
+    public var thinking: String? { [reasoning, reasoningContent].compactMap { $0 }.first { !$0.isEmpty } }
+}
+
+public struct SearchHit: Codable, Identifiable, Hashable, Sendable {
+    public var sessionId: String
+    public var snippet: String?
+    public var role: String?
+    public var title: String?
+    public var source: String?
+    public var model: String?
+    public var lastActive: Double?
+    public var messageCount: Int?
+    public var id: String { sessionId + (snippet ?? "") }
+}
+struct SearchEnvelope: Decodable { let results: [SearchHit] }
+
+// MARK: Skills (dashboard API; /v1/skills is broken upstream, see bead hermes-mac-6eg)
+
+public struct Skill: Codable, Identifiable, Hashable, Sendable {
+    public var name: String
+    public var description: String?
+    public var category: String?
+    public var locked: Bool?
+    public var enabled: Bool?
+    public var usage: Int?
+    public var provenance: String?
+    public var id: String { name }
+}
+
+public struct SkillContent: Codable, Hashable, Sendable {
+    public var name: String
+    public var content: String
+    public var path: String?
+}
+
+// MARK: Cron jobs
+
+public struct CronSchedule: Codable, Hashable, Sendable {
+    public var kind: String?
+    public var expr: String?
+    public var minutes: Double?
+    public var runAt: String?
+    public var display: String?
+}
+
+public struct CronRepeat: Codable, Hashable, Sendable {
+    public var times: Int?
+    public var completed: Int?
+}
+
+public struct CronJob: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String?
+    public var prompt: String?
+    public var skills: [String]?
+    public var model: String?
+    public var provider: String?
+    public var schedule: CronSchedule?
+    public var scheduleDisplay: String?
+    public var `repeat`: CronRepeat?
+    public var enabled: Bool?
+    public var state: String?
+    public var pausedReason: String?
+    public var createdAt: String?
+    public var nextRunAt: String?
+    public var lastRunAt: String?
+    public var lastStatus: String?
+    public var lastError: String?
+    public var lastDeliveryError: String?
+    public var failureStreak: Int?
+    public var deliver: String?
+    public var timezone: String?
+    public var workdir: String?
+
+    public var isPaused: Bool { state == "paused" || enabled == false }
+    public var scheduleText: String { scheduleDisplay ?? schedule?.display ?? schedule?.expr ?? "—" }
+}
+struct JobsEnvelope: Decodable { let jobs: [CronJob] }
+struct JobEnvelope: Decodable { let job: CronJob }
+
+public struct CronRun: Codable, Identifiable, Hashable, Sendable {
+    public var id: String?
+    public var runId: String?
+    public var status: String?
+    public var startedAt: JSONValue?
+    public var finishedAt: JSONValue?
+    public var error: String?
+    public var output: String?
+    public var sessionId: String?
+    public var stableID: String { id ?? runId ?? UUID().uuidString }
+}
+struct RunsEnvelope: Decodable { let runs: [CronRun] }
+
+public struct DeliveryTarget: Codable, Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+}
+struct TargetsEnvelope: Decodable { let targets: [DeliveryTarget] }
+
+// MARK: Tools, models, memory, analytics, status
+
+public struct Toolset: Codable, Identifiable, Hashable, Sendable {
+    public var name: String
+    public var label: String?
+    public var description: String?
+    public var enabled: Bool?
+    public var available: Bool?
+    public var configured: Bool?
+    public var tools: [String]?
+    public var id: String { name }
+}
+
+public struct ModelInfo: Codable, Hashable, Sendable {
+    public var model: String?
+    public var provider: String?
+    public var effectiveContextLength: Int?
+}
+
+public struct ProviderOption: Codable, Identifiable, Hashable, Sendable {
+    public var slug: String
+    public var name: String?
+    public var isCurrent: Bool?
+    public var authenticated: Bool?
+    public var models: [JSONValue]?
+    public var warning: String?
+    public var id: String { slug }
+    /// Model entries are strings in some versions and {id,...} objects in others.
+    public var modelIDs: [String] { (models ?? []).compactMap { $0.string ?? $0["id"]?.string } }
+}
+struct ProvidersEnvelope: Decodable { let providers: [ProviderOption] }
+
+public struct MemoryProvider: Codable, Identifiable, Hashable, Sendable {
+    public var name: String
+    public var description: String?
+    public var available: Bool?
+    public var configured: Bool?
+    public var status: String?
+    public var id: String { name }
+}
+
+public struct MemoryState: Codable, Hashable, Sendable {
+    public var active: String?
+    public var providers: [MemoryProvider]?
+    public var builtinFiles: [String: Int]?
+}
+
+public struct UsageDay: Codable, Hashable, Sendable, Identifiable {
+    public var day: String
+    public var inputTokens: Int?
+    public var outputTokens: Int?
+    public var reasoningTokens: Int?
+    public var estimatedCost: Double?
+    public var sessions: Int?
+    public var id: String { day }
+}
+
+public struct UsageByModel: Codable, Hashable, Sendable, Identifiable {
+    public var model: String
+    public var inputTokens: Int?
+    public var outputTokens: Int?
+    public var estimatedCost: Double?
+    public var sessions: Int?
+    public var apiCalls: Int?
+    public var id: String { model }
+}
+
+public struct UsageTotals: Codable, Hashable, Sendable {
+    public var totalInput: Int?
+    public var totalOutput: Int?
+    public var totalReasoning: Int?
+    public var totalEstimatedCost: Double?
+    public var totalSessions: Int?
+    public var totalApiCalls: Int?
+}
+
+public struct UsageReport: Codable, Hashable, Sendable {
+    public var daily: [UsageDay]?
+    public var byModel: [UsageByModel]?
+    public var totals: UsageTotals?
+    public var periodDays: Int?
+}
+
+public struct HealthInfo: Codable, Hashable, Sendable {
+    public var status: String?
+    public var version: String?
+    public var platform: String?
+}
+
+public struct DashboardStatus: Codable, Hashable, Sendable {
+    public var version: String?
+    public var releaseDate: String?
+    public var gatewayRunning: Bool?
+    public var gatewayState: String?
+}
+
+public struct LogLines: Codable, Sendable { public var file: String?; public var lines: [String] }
+struct RawConfig: Decodable { let yaml: String; let path: String? }
+
+// MARK: Chat stream (POST /api/sessions/{id}/chat/stream)
+
+public struct ToolActivity: Identifiable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+    public var preview: String?
+    public var state: State
+    public enum State: Hashable, Sendable { case running, done, failed }
+}
+
+public struct ApprovalRequest: Identifiable, Hashable, Sendable {
+    public var id: String { runId + (requestId ?? command ?? "") }
+    public var runId: String
+    public var requestId: String?
+    public var command: String?
+    public var description: String?
+    public var choices: [String]
+}
+
+/// Typed view of the session chat SSE events (verified event names; see HermesClient.chatStream).
+public enum ChatEvent: Sendable {
+    case started(runId: String, messageId: String?)
+    case delta(String)
+    case thinking(String)
+    case commentary(String)
+    case toolStarted(ToolActivity)
+    case toolFinished(id: String, failed: Bool)
+    case approval(ApprovalRequest)
+    case completed(content: String)
+    case failed(String)
+    case cancelled
+    case status(String)
+}
