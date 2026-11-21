@@ -61,8 +61,16 @@ enum Markdown {
         return blocks
     }
 
+    /// Inline styling for model output. Links are untrusted: only http(s) and mailto survive; anything else
+    /// (file://, app URL schemes) is rendered as plain text so a click can't launch it.
+    // AIDEV-NOTE: security; keep the scheme allowlist (security review 2026-11-21).
     static func inline(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+        var a = (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+        for run in a.runs {
+            guard let url = run.link else { continue }
+            if !["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") { a[run.range].link = nil }
+        }
+        return a
     }
 }
 

@@ -293,7 +293,9 @@ struct ApprovalCard: View {
                 Spacer()
                 if request.choices.contains("always") { Button("Always Allow") { choose("always") } }
                 if request.choices.contains("session") { Button("Allow for Chat") { choose("session") } }
-                if request.choices.contains("once") { Button("Allow Once") { choose("once") }.buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction) }
+                // AIDEV-NOTE: security; no keyboard shortcut on approval buttons. Return sends in the composer and must
+                // never approve an agent command (security review 2026-11-21).
+                if request.choices.contains("once") { Button("Allow Once") { choose("once") }.buttonStyle(.borderedProminent) }
             }
         }
         .padding(16)
