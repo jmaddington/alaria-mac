@@ -53,18 +53,34 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+./scripts/build.sh                      # -> build/Hermes.app, signed with Developer ID if present
+swift run hermes-checks                 # unit checks + live API checks (if dev/hermes-home/.env exists)
+HERMES_CHECK_CHAT=1 swift run hermes-checks   # + one real streamed chat turn (slow on local models)
+HERMES_CHECK_VOICE=1 swift run hermes-checks  # + offline TTS -> VAD -> on-device STT round trip
+HERMES_SRC=/path/to/hermes-agent ./scripts/dev-hermes.sh   # local Hermes (:8642 + :9119) on LM Studio
 ```
+
+Launch the built app against the dev server (seeds the Keychain on first run):
+`set -a; source dev/hermes-home/.env; set +a; HERMES_API_KEY=$API_SERVER_KEY HERMES_DASHBOARD_TOKEN=$HERMES_DASHBOARD_SESSION_TOKEN build/Hermes.app/Contents/MacOS/Hermes`
+
+## Toolchain constraints (Command Line Tools only, no Xcode)
+
+- No XCTest and no Swift Testing macros: checks are the `hermes-checks` executable.
+- No SwiftUI macro plugin: write `@ViewState` (typealias for classic `SwiftUI.State`), never `@State`;
+  no `#Preview`, no `@Entry`. `@Observable` works (Observation macros ship with CLT).
+- Check runners must not block main (AVSpeechSynthesizer calls back on main): use `waitPumpingRunLoop`.
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+- `HermesKit` (library): `API/` HTTP + SSE client for both Hermes servers (see docs/agents/api-notes.md);
+  `Voice/` drive-mode port: VAD, sentence splitter, STT (Apple on-device / OpenAI), TTS (system / OpenAI),
+  `VoiceAudio` (one AVAudioEngine for mic + playback so voice-processing AEC enables barge-in), earcons.
+- `HermesMac` (app): `AppModel` (connection, Keychain), `ChatStore` (sessions + streaming), `VoiceController`
+  (voice state machine), `LibraryStore` (skills/jobs/tools/memory), SwiftUI views per section.
+- Voice mode reference implementation: github.com/jmaddington/drive-mode (VAD thresholds, earcon vocabulary).
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- Logging: `Logger` with a unique grep code suffix, e.g. `[VOX-STT-ERR]`. No emoji.
+- Every user-facing failure goes through `AppModel.run`/`flash` - never swallow errors silently.
