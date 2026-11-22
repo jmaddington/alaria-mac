@@ -1,0 +1,17 @@
+;; macOS sandbox (seatbelt) profile for the local dev Hermes: it must not read or write the user's files.
+;; Used by scripts/dev-hermes.sh:  sandbox-exec -f scripts/hermes-sandbox.sb -D HOME_DIR=... -D HERMES_HOME=... -D HERMES_SRC=... -D UV_PYTHON=... -D SCRATCH=...
+;; Network stays open (LM Studio, web tools); only the filesystem is fenced.
+;; AIDEV-NOTE: security (user request 2026-11-22: "ensure the local hermes can't access my files"). Later rules win.
+(version 1)
+(allow default)
+
+;; Fence the user's home, the agent scratch area and external volumes...
+(deny file-read* file-write* (subpath (param "HOME_DIR")))
+(deny file-read* file-write* (subpath (param "SCRATCH")))
+(deny file-read* file-write* (subpath "/Volumes"))
+
+;; ...except what Hermes itself needs.
+(allow file-read-metadata (literal (param "HOME_DIR")))               ; stat($HOME) only, no listing
+(allow file-read* (subpath (param "UV_PYTHON")))                       ; the Python runtime (read-only)
+(allow file-read* file-write* (subpath (param "HERMES_HOME")))         ; its own isolated home
+(allow file-read* file-write* (subpath (param "HERMES_SRC")))          ; its source + venv

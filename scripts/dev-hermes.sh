@@ -45,6 +45,15 @@ platforms:
 EOF
 
 set -a; source "$HOME_DIR/.env"; set +a
+
+# Filesystem fence (user requirement): Hermes runs under scripts/hermes-sandbox.sb and cannot read or write the
+# user's home except its own HERMES_HOME + source/venv + the uv Python runtime. HOME is pointed inside HERMES_HOME
+# so libraries don't try ~. Opt out only for debugging: HERMES_DEV_UNSANDBOXED=1.
+# AIDEV-NOTE: security; keep the sandbox on by default.
+mkdir -p "$HOME_DIR/home"
+SANDBOX=(sandbox-exec -f "$ROOT/scripts/hermes-sandbox.sb" -D "HOME_DIR=$HOME" -D "HERMES_HOME=$HOME_DIR"
+         -D "HERMES_SRC=$SRC" -D "UV_PYTHON=$HOME/.local/share/uv/python" -D "SCRATCH=/private/tmp/claude-$(id -u)")
+[[ ${HERMES_DEV_UNSANDBOXED:-} == 1 ]] && SANDBOX=() && echo "WARNING: running Hermes WITHOUT the filesystem sandbox" >&2
 tmux kill-session -t $SESSION 2>/dev/null || true
 sleep 1
 # Refuse to "succeed" against someone else's server (e.g. a real ~/.hermes instance) on our ports.
@@ -53,9 +62,10 @@ for port in 8642 9119; do
     echo "Port $port is already in use by another process; stop it first (lsof -nP -iTCP:$port -sTCP:LISTEN)." >&2; exit 1
   fi
 done
-ENVS=(-e HERMES_HOME="$HOME_DIR" -e API_SERVER_KEY="$API_SERVER_KEY" -e HERMES_DASHBOARD_SESSION_TOKEN="$HERMES_DASHBOARD_SESSION_TOKEN")
-tmux new-session -d -s $SESSION -n gateway "${ENVS[@]}" "$SRC/venv/bin/hermes gateway 2>&1 | tee $HOME_DIR/gateway.out"
-tmux new-window -t $SESSION -n dashboard "${ENVS[@]}" "$SRC/venv/bin/hermes dashboard --no-open --port 9119 2>&1 | tee $HOME_DIR/dashboard.out"
+ENVS=(-e HERMES_HOME="$HOME_DIR" -e HOME="$HOME_DIR/home" -e API_SERVER_KEY="$API_SERVER_KEY" -e HERMES_DASHBOARD_SESSION_TOKEN="$HERMES_DASHBOARD_SESSION_TOKEN")
+SB="${(j: :)${(q)SANDBOX[@]}}"
+tmux new-session -d -s $SESSION -n gateway "${ENVS[@]}" "$SB $SRC/venv/bin/hermes gateway 2>&1 | tee $HOME_DIR/gateway.out"
+tmux new-window -t $SESSION -n dashboard "${ENVS[@]}" "$SB $SRC/venv/bin/hermes dashboard --no-open --port 9119 2>&1 | tee $HOME_DIR/dashboard.out"
 
 for i in {1..60}; do
   a=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8642/health || true)

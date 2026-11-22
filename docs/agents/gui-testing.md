@@ -11,3 +11,7 @@
   HERMES_VOICE_TEST=1 + scripts/voice-inject.swift harness instead. AEC OFF + `say` works but also hears the room.
 - Plain `Text` with `.monospaced` design renders SF Mono; `TextEditor` (NSTextView) needs
   `Font(NSFont.monospacedSystemFont(...))` or it falls back to Courier.
+- KEYSTROKE SAFETY (incident 2026-11-22): System Events `keystroke` goes to whatever app is FRONTMOST, not the
+  process named in `tell process`. A click on an inactive window may not activate it. Always `tell application
+  "Talaria" to activate`, then verify `name of first process whose frontmost is true` == "Talaria" immediately before
+  typing, and abort otherwise. Other Claude sessions run in iTerm on this Mac; stray text there becomes a prompt.
