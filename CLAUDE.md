@@ -85,6 +85,8 @@ Launch the built app against the dev server (seeds the Keychain on first run):
   `VoiceAudio` (one AVAudioEngine for mic + playback so voice-processing AEC enables barge-in), earcons.
 - `HermesMac` (app): `AppModel` (connection, Keychain), `ChatStore` (sessions + streaming), `VoiceController`
   (voice state machine), `LibraryStore` (skills/jobs/tools/memory), SwiftUI views per section.
+- Browser panel + Hermes browser tool: `Features/Browser/` (WKWebView inspector) served to Hermes as MCP tools by
+  `HermesMCPServer` (loopback listener) over `HermesKit/MCP` (pure-Foundation protocol). See docs/agents/browser-tool.md.
 - Voice mode reference implementation: github.com/jmaddington/drive-mode (VAD thresholds, earcon vocabulary).
 
 ## Conventions & Patterns

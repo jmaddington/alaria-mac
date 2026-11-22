@@ -53,7 +53,8 @@ final class BrowserModel: NSObject {
         cfg.preferences.javaScriptCanOpenWindowsAutomatically = false
         cfg.preferences.isElementFullscreenEnabled = true
         cfg.userContentController.addUserScript(BrowserScript.userScript)
-        let w = WKWebView(frame: .zero, configuration: cfg)
+        // Real size up front: Hermes may call a tool before the panel is on screen, and a 0x0 page lays out as junk.
+        let w = WKWebView(frame: NSRect(x: 0, y: 0, width: 520, height: 760), configuration: cfg)
         w.allowsBackForwardNavigationGestures = true
         w.allowsMagnification = true
         w.isInspectable = true
