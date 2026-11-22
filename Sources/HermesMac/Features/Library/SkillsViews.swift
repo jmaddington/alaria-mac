@@ -15,7 +15,7 @@ struct SkillsList: View {
                     ForEach(categories, id: \.self) { cat in
                         SwiftUI.Section(Self.title(cat)) {
                             ForEach(filtered.filter { Self.cat($0) == cat }) { s in
-                                SkillRow(skill: s).tag(Optional(s.name))
+                                SkillRow(skill: s).hoverRow().tag(Optional(s.name))
                             }
                         }
                     }
@@ -79,12 +79,16 @@ struct SkillDetail: View {
         return (p as NSString).abbreviatingWithTildeInPath
     }
     @ViewState private var loading = false
+    /// Name of the skill whose text is in the editor. nil while loading or after a failed load.
+    // AIDEV-NOTE: data-loss guard (hermes-mac-ilw): Save must only ever write text loaded for that same skill.
+    @ViewState private var loadedName: String?
+    @ViewState private var loadError: String?
     @ViewState private var saving = false
     @ViewState private var preview = false
     @ViewState private var confirmUninstall = false
 
     private var skill: Skill? { model.library.skills.first { $0.name == model.library.skillSelection } }
-    private var dirty: Bool { content != original }
+    private var dirty: Bool { loadedName != nil && loadedName == skill?.name && content != original }
 
     var body: some View {
         Group {
@@ -94,7 +98,14 @@ struct SkillDetail: View {
                     header(skill)
                     Divider()
                     if loading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
-                    else if preview {
+                    else if let loadError {
+                        VStack(spacing: 12) {
+                            EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't open \(skill.name)", message: loadError)
+                            Button("Try Again") { Task { await load(skill.name) } }
+                        }
+                    } else if loadedName != skill.name {
+                        Color.clear
+                    } else if preview {
                         ScrollView { MarkdownView(text: stripFrontMatter(content)).frame(maxWidth: Theme.readingWidth).padding(32).frame(maxWidth: .infinity) }
                     } else {
                         TextEditor(text: $content)
@@ -166,15 +177,24 @@ struct SkillDetail: View {
 
     private func load(_ name: String) async {
         guard let client = model.client else { return }
-        loading = true; defer { loading = false }
+        // Drop the previous skill's text first, so it can never be shown or saved under this name.
+        loadedName = nil; loadError = nil; content = ""; original = ""; path = nil
+        loading = true
         do {
             let c = try await client.skillContent(name)
-            content = c.content; original = c.content; path = c.path
-        } catch { model.flash("Couldn't open \(name): \(error.localizedDescription)") }
+            guard model.library.skillSelection == name, !Task.isCancelled else { return } // superseded by a newer selection
+            content = c.content; original = c.content; path = c.path; loadedName = name
+        } catch is CancellationError {
+            return
+        } catch {
+            guard model.library.skillSelection == name else { return }
+            loadError = error.localizedDescription
+        }
+        if model.library.skillSelection == name { loading = false }
     }
 
     private func save() async {
-        guard let client = model.client, let s = skill else { return }
+        guard let client = model.client, let s = skill, loadedName == s.name else { return }
         saving = true; defer { saving = false }
         do {
             try await client.saveSkill(s.name, content: content)
