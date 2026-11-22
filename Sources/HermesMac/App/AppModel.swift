@@ -37,19 +37,79 @@ enum Keychain {
 }
 
 /// Connection settings. URLs in UserDefaults, secrets in the Keychain.
-struct ConnectionSettings: Equatable {
+/// One saved Hermes server. URLs + name in UserDefaults ("servers"), secrets in the Keychain per server.
+/// AIDEV-NOTE: the server with id "default" keeps the pre-multi-server Keychain accounts ("apiKey", "dashboardToken")
+/// and UserDefaults keys, so existing installs migrate without touching secrets.
+struct ConnectionSettings: Equatable, Identifiable {
+    var id = "default"
+    var name = ""
     var apiURL = "http://127.0.0.1:8642"
     var apiKey = ""
     var dashboardURL = "http://127.0.0.1:9119"
     var dashboardToken = ""
 
-    static func load() -> ConnectionSettings {
-        var s = ConnectionSettings()
+    /// Name for menus: the saved name, else the API host.
+    var displayName: String {
+        if !name.trimmingCharacters(in: .whitespaces).isEmpty { return name }
+        return Self.validURL(apiURL)?.host() ?? "Hermes"
+    }
+
+    private static func account(_ base: String, _ id: String) -> String { id == "default" ? base : "\(base).srv.\(id)" }
+
+    // MARK: server list
+
+    private struct Stored: Codable { var id: String; var name: String; var apiURL: String; var dashboardURL: String }
+
+    static var currentID: String {
+        get { UserDefaults.standard.string(forKey: "server.current") ?? "default" }
+        set { UserDefaults.standard.set(newValue, forKey: "server.current") }
+    }
+
+    /// All saved servers (secrets filled in), migrating the single legacy server on first run.
+    static func all() -> [ConnectionSettings] {
         let d = UserDefaults.standard
-        s.apiURL = d.string(forKey: "apiURL") ?? s.apiURL
-        s.dashboardURL = d.string(forKey: "dashboardURL") ?? s.dashboardURL
-        s.apiKey = Keychain.get("apiKey") ?? ""
-        s.dashboardToken = Keychain.get("dashboardToken") ?? ""
+        var stored = (d.data(forKey: "servers")).flatMap { try? JSONDecoder().decode([Stored].self, from: $0) } ?? []
+        if stored.isEmpty {
+            let legacy = ConnectionSettings()
+            stored = [Stored(id: "default", name: "", apiURL: d.string(forKey: "apiURL") ?? legacy.apiURL,
+                             dashboardURL: d.string(forKey: "dashboardURL") ?? legacy.dashboardURL)]
+            if let data = try? JSONEncoder().encode(stored) { d.set(data, forKey: "servers") }
+        }
+        return stored.map { st in
+            var s = ConnectionSettings(id: st.id, name: st.name, apiURL: st.apiURL, dashboardURL: st.dashboardURL)
+            s.apiKey = Keychain.get(account("apiKey", st.id)) ?? ""
+            s.dashboardToken = Keychain.get(account("dashboardToken", st.id)) ?? ""
+            return s
+        }
+    }
+
+    private static func writeList(_ list: [ConnectionSettings]) {
+        let stored = list.map { Stored(id: $0.id, name: $0.name, apiURL: $0.apiURL, dashboardURL: $0.dashboardURL) }
+        if let data = try? JSONEncoder().encode(stored) { UserDefaults.standard.set(data, forKey: "servers") }
+    }
+
+    /// Removes a server and its secrets (never the last one).
+    static func remove(_ id: String) {
+        var list = all()
+        guard list.count > 1 else { return }
+        list.removeAll { $0.id == id }
+        writeList(list)
+        Keychain.set(account("apiKey", id), nil)
+        Keychain.set(account("dashboardToken", id), nil)
+        if currentID == id { currentID = list[0].id }
+    }
+
+    /// Suffix for per-server UserDefaults/Keychain names; "" for the default server (pre-multi-server names).
+    static var scope: String { currentID == "default" ? "" : ".srv.\(currentID)" }
+
+    static func newServer() -> ConnectionSettings {
+        ConnectionSettings(id: UUID().uuidString.lowercased().prefix(8).description, name: "", apiURL: "http://", apiKey: "",
+                           dashboardURL: "", dashboardToken: "")
+    }
+
+    static func load() -> ConnectionSettings {
+        let list = all()
+        var s = list.first { $0.id == currentID } ?? list[0]
         // AIDEV-NOTE: dev/test seam: HERMES_API_KEY etc. in the launch environment seed an empty Keychain.
         let env = ProcessInfo.processInfo.environment
         if s.apiKey.isEmpty, let k = env["HERMES_API_KEY"] {
@@ -61,13 +121,18 @@ struct ConnectionSettings: Equatable {
         return s
     }
 
-    /// Returns false if a secret couldn't be stored in the Keychain.
+    /// Upserts this server in the list and stores its secrets. Returns false if a secret couldn't be stored.
     @discardableResult
     func save() -> Bool {
-        UserDefaults.standard.set(apiURL, forKey: "apiURL")
-        UserDefaults.standard.set(dashboardURL, forKey: "dashboardURL")
-        let a = Keychain.set("apiKey", apiKey)
-        let b = Keychain.set("dashboardToken", dashboardToken)
+        var list = Self.all()
+        if let i = list.firstIndex(where: { $0.id == id }) { list[i] = self } else { list.append(self) }
+        Self.writeList(list)
+        if id == "default" { // keep legacy keys current for older builds / tools
+            UserDefaults.standard.set(apiURL, forKey: "apiURL")
+            UserDefaults.standard.set(dashboardURL, forKey: "dashboardURL")
+        }
+        let a = Keychain.set(Self.account("apiKey", id), apiKey)
+        let b = Keychain.set(Self.account("dashboardToken", id), dashboardToken)
         return a && b
     }
 
@@ -115,6 +180,8 @@ enum ConnectionState: Equatable {
 @MainActor @Observable
 final class AppModel {
     var settings = ConnectionSettings.load()
+    /// Saved servers (for the switcher and Settings > Connection).
+    var servers = ConnectionSettings.all()
     private(set) var client: HermesClient?
     var connection: ConnectionState = .unconfigured
     var section: Section? = .chats
@@ -151,12 +218,33 @@ final class AppModel {
         }
     }
 
+    /// Saves a server's settings. Editing the current server reconnects; editing another one just saves it.
     func apply(_ s: ConnectionSettings) {
+        if !s.save() { flash("Couldn't save the key to your Keychain. It will be forgotten when Talaria quits.") }
+        servers = ConnectionSettings.all()
+        guard s.id == settings.id else { return }
         let serverChanged = s.apiURL != settings.apiURL || s.dashboardURL != settings.dashboardURL
         settings = s
-        if !s.save() { flash("Couldn't save the key to your Keychain. It will be forgotten when Hermes quits.") }
         if serverChanged { resetServerState() } // never send to a session id that only existed on the old server
         connect()
+    }
+
+    /// Switches the whole app to another saved server: clears everything from the old one, then connects.
+    func switchServer(to id: String) {
+        guard id != settings.id, let s = servers.first(where: { $0.id == id }) else { return }
+        ConnectionSettings.currentID = id
+        settings = s
+        resetServerState()
+        profiles.serverChanged()
+        connect()
+        flash("Switched to \(s.displayName)")
+    }
+
+    func removeServer(_ id: String) {
+        let wasCurrent = id == settings.id
+        ConnectionSettings.remove(id)
+        servers = ConnectionSettings.all()
+        if wasCurrent, let first = servers.first { settings = first; resetServerState(); profiles.serverChanged(); connect() }
     }
 
     private var connectTask: Task<Void, Never>?

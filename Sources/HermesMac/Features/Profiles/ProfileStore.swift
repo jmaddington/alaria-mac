@@ -23,7 +23,7 @@ final class ProfileStore {
     /// Profiles the gateway answers for at /p/<name>/; nil when the server doesn't report it.
     private(set) var served: Set<String>?
     /// Remembered choice; nil = the gateway's own profile.
-    private(set) var selected: String? = UserDefaults.standard.string(forKey: "profile.selected")
+    private(set) var selected: String? = UserDefaults.standard.string(forKey: "profile.selected" + ConnectionSettings.scope)
     /// Profile being switched to (spinner in the switcher).
     private(set) var switching: String?
     /// A profile that answered 401: drives the "needs its own key" sheet.
@@ -41,7 +41,8 @@ final class ProfileStore {
 
     // MARK: keys
 
-    static func keyAccount(_ name: String) -> String { "apiKey.profile.\(name)" }
+    /// Per server: the default server keeps the original account names.
+    static func keyAccount(_ name: String) -> String { "apiKey.profile.\(name)" + ConnectionSettings.scope }
     func storedKey(_ name: String) -> String? { Keychain.get(Self.keyAccount(name)).flatMap { $0.isEmpty ? nil : $0 } }
 
     /// The client for `name`, derived from any client on the same servers.
@@ -83,9 +84,15 @@ final class ProfileStore {
         }
     }
 
+    /// Another server was selected: profiles, their keys and the remembered choice are per server.
+    func serverChanged() {
+        profiles = []; served = nil; own = "default"; switching = nil; keyPrompt = nil; pendingMessage = nil
+        selected = UserDefaults.standard.string(forKey: "profile.selected" + ConnectionSettings.scope)
+    }
+
     private func setSelected(_ name: String?) {
         selected = (name == own) ? nil : name
-        UserDefaults.standard.set(selected, forKey: "profile.selected")
+        UserDefaults.standard.set(selected, forKey: "profile.selected" + ConnectionSettings.scope)
     }
 
     // MARK: switching

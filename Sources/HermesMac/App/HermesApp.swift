@@ -19,6 +19,13 @@ struct HermesApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New Chat") { model.section = .chats; model.chats.newChat() }.keyboardShortcut("n")
             }
+            // Multiple Hermes servers: ⌃⌘1-9 switch between them.
+            CommandMenu("Server") {
+                ForEach(Array(model.servers.prefix(9).enumerated()), id: \.element.id) { i, srv in
+                    Button(srv.id == model.settings.id ? "✓ \(srv.displayName)" : srv.displayName) { model.switchServer(to: srv.id) }
+                        .keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: [.command, .control])
+                }
+            }
             CommandMenu("Conversation") {
                 Button(model.voice.isActive ? "End Voice Mode" : "Start Voice Mode") {
                     model.section = .chats

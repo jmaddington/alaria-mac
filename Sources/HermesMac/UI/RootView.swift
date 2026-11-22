@@ -120,22 +120,38 @@ struct Sidebar: View {
 struct ConnectionBadge: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openSettings) private var openSettings
+    @AppStorage("settings.tab") private var settingsTab = "connection"
+    // The badge doubles as the server switcher (multiple Hermes servers, user request 2026-11-22).
     var body: some View {
-        Button { openSettings() } label: {
+        Menu {
+            SwiftUI.Section("Servers") {
+                ForEach(model.servers) { s in
+                    Button { model.switchServer(to: s.id) } label: {
+                        if s.id == model.settings.id { Label(s.displayName, systemImage: "checkmark") } else { Text(s.displayName) }
+                    }
+                }
+            }
+            Divider()
+            Button("Manage Servers…") { settingsTab = "connection"; openSettings() }
+        } label: {
             HStack(spacing: 8) {
                 StatusDot(color: color)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.caption.weight(.medium))
-                    Text(subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    Text(model.servers.count > 1 ? model.settings.displayName : title).font(.caption.weight(.medium))
+                    Text(model.servers.count > 1 ? "\(title) · \(subtitle)" : subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                Image(systemName: "chevron.up.chevron.down").font(.caption2).foregroundStyle(.tertiary)
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
             .contentShape(Rectangle())
         }
+        .menuStyle(.button)
         .buttonStyle(.plain)
+        .menuIndicator(.hidden)
         .glassEffect(.regular, in: .rect(cornerRadius: 10))
-        .help("Connection settings")
+        .help("Switch Hermes server")
+        .accessibilityLabel("Server: \(model.settings.displayName), \(title)")
     }
     private var color: Color {
         switch model.connection {

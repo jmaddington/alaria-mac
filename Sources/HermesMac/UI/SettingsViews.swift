@@ -71,22 +71,70 @@ struct ConnectionForm: View {
 
 struct ConnectionPane: View {
     @Environment(AppModel.self) private var model
+    @ViewState private var editingID = ""
     @ViewState private var draft = ConnectionSettings()
     @ViewState private var result: String?
+    @ViewState private var confirmRemove = false
+
+    private var original: ConnectionSettings? { model.servers.first { $0.id == draft.id } }
+    private var isNew: Bool { original == nil }
+    private var urlsValid: Bool {
+        ConnectionSettings.validURL(draft.apiURL) != nil
+            && (draft.dashboardURL.isEmpty || ConnectionSettings.validURL(draft.dashboardURL) != nil)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
+            // Server list (multiple Hermes servers): pick one to edit; add or remove.
+            HStack(spacing: 8) {
+                Picker("Server", selection: Binding(get: { editingID }, set: { select($0) })) {
+                    ForEach(model.servers) { s in
+                        Text(s.id == model.settings.id ? "\(s.displayName) (current)" : s.displayName).tag(s.id)
+                    }
+                    if isNew { Text("New Server").tag(draft.id) }
+                }
+                .frame(maxWidth: 320)
+                Button { let n = ConnectionSettings.newServer(); draft = n; editingID = n.id; result = nil } label: { Image(systemName: "plus") }
+                    .help("Add a server")
+                Button { confirmRemove = true } label: { Image(systemName: "minus") }
+                    .help("Remove this server").disabled(isNew || model.servers.count < 2)
+                Spacer()
+                if !isNew && draft.id != model.settings.id {
+                    Button("Use This Server") { model.switchServer(to: draft.id) }
+                }
+            }
+            .padding(.horizontal, 20).padding(.top, 14)
+            Form {
+                SwiftUI.Section {
+                    TextField("Name", text: $draft.name, prompt: Text(ConnectionSettings.validURL(draft.apiURL)?.host() ?? "e.g. Home server"))
+                }
+            }
+            .formStyle(.grouped)
+            .frame(height: 74)
             ConnectionForm(draft: $draft)
             HStack {
                 if let result { Text(result).font(.callout).foregroundStyle(result.hasPrefix("✓") ? .green : .red).lineLimit(2) }
                 Spacer()
                 Button("Test") { Task { result = await ConnectionForm.test(draft) } }
-                Button("Save") { model.apply(draft); result = nil }.buttonStyle(.borderedProminent)
-                    .disabled(draft == model.settings || ConnectionSettings.validURL(draft.apiURL) == nil
-                              || (!draft.dashboardURL.isEmpty && ConnectionSettings.validURL(draft.dashboardURL) == nil))
+                Button(isNew ? "Add Server" : "Save") {
+                    model.apply(draft)
+                    if isNew { model.switchServer(to: draft.id) }
+                    editingID = draft.id; result = nil
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled((!isNew && draft == original) || !urlsValid || draft.apiKey.isEmpty)
             }
             .padding(.horizontal, 20).padding(.bottom, 18)
         }
-        .onAppear { draft = model.settings }
+        .onAppear { select(model.settings.id) }
+        .confirmationDialog("Remove “\(draft.displayName)”?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { model.removeServer(draft.id); select(model.settings.id) }
+        } message: { Text("Its keys are deleted from your Keychain. Nothing changes on the server itself.") }
+    }
+
+    private func select(_ id: String) {
+        guard let s = model.servers.first(where: { $0.id == id }) else { return }
+        editingID = id; draft = s; result = nil
     }
 }
 

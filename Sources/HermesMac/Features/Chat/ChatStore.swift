@@ -262,7 +262,7 @@ final class ChatStore {
     // archived to offer an Archived section + Unarchive (hermes-mac-d2w). Chats archived elsewhere stay invisible.
     var archived: [HermesSession] = []
     // Per profile: another profile's ids 404 here, and loadArchived would forget them as "gone".
-    private var archivedKey: String { "chats.archivedIDs" + (client?.profile.map { ".\($0)" } ?? "") }
+    private var archivedKey: String { "chats.archivedIDs" + ConnectionSettings.scope + (client?.profile.map { ".\($0)" } ?? "") }
     private var archivedIDs: [String] {
         get { UserDefaults.standard.stringArray(forKey: archivedKey) ?? [] }
         set { UserDefaults.standard.set(newValue, forKey: archivedKey) }
