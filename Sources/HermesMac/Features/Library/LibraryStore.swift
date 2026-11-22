@@ -18,6 +18,13 @@ final class LibraryStore {
     var skillDrafts: [String: String] = [:]
     var jobDrafts: [String: HermesClient.JobDraft] = [:]
 
+    /// Forget everything from the previous server (connection settings changed).
+    func reset() {
+        skills = []; skillSelection = nil; skillDrafts = [:]
+        jobs = []; jobSelection = nil; creatingJob = false; jobDrafts = [:]
+        toolsets = []; toolSelection = nil; memory = nil
+    }
+
     // Jobs
     var jobs: [CronJob] = []
     var jobSelection: String?

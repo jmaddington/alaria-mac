@@ -124,26 +124,71 @@ final class AppModel {
     }
 
     func apply(_ s: ConnectionSettings) {
+        let serverChanged = s.apiURL != settings.apiURL || s.dashboardURL != settings.dashboardURL
         settings = s
         s.save()
+        if serverChanged { resetServerState() } // never send to a session id that only existed on the old server
         connect()
     }
 
+    private var connectTask: Task<Void, Never>?
+    private var monitorTask: Task<Void, Never>?
+
+    /// (Re)connects. Cancels an in-flight connect so an older health result can't overwrite a newer one, and
+    /// starts a monitor: every 15 s a dropped server turns the badge red and a failed one is retried (hermes-mac-1b9).
     func connect() {
+        connectTask?.cancel()
         client = settings.makeClient()
         guard let client else { connection = .unconfigured; return }
         connection = .connecting
-        Task {
+        connectTask = Task {
             do {
                 let h = try await client.health()
+                guard !Task.isCancelled else { return }
                 connection = .connected(version: h.version == "unknown" ? nil : h.version)
                 await chats.reload()
                 await library.loadJobs()
                 await library.loadSkills()
             } catch {
+                guard !Task.isCancelled else { return }
                 connection = .failed(error.localizedDescription)
             }
         }
+        if monitorTask == nil { monitorTask = Task { await monitor() } }
+    }
+
+    private func monitor() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(15))
+            guard let client else { continue }
+            switch connection {
+            case .failed: connect() // auto-retry; connect() keeps this monitor
+            case .connected:
+                do { _ = try await client.health() }
+                catch { if case .connected = connection { connection = .failed(error.localizedDescription) } }
+            default: break
+            }
+        }
+    }
+
+    func reloadCurrent() {
+        if case .failed = connection { connect(); return }
+        Task {
+            switch section ?? .chats {
+            case .chats: await chats.reload()
+            case .skills: await library.loadSkills()
+            case .scheduled: await library.loadJobs()
+            case .tools: await library.loadToolsets()
+            case .memory: await library.loadMemory()
+            case .usage, .logs: break // these panes poll / reload on their own
+            }
+        }
+    }
+
+    private func resetServerState() {
+        chats.newChat()
+        chats.sessions = []
+        library.reset()
     }
 
     func flash(_ message: String) {

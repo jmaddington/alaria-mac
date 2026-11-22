@@ -26,7 +26,8 @@ struct HermesApp: App {
                 Button("Stop Responding") { model.chats.stop() }
                     .keyboardShortcut(".", modifiers: .command).disabled(!model.chats.isStreaming)
                 Divider()
-                Button("Reload") { Task { await model.chats.reload() } }.keyboardShortcut("r")
+                // Reloads what's on screen, and reconnects if Hermes was unreachable (hermes-mac-6o9, -1b9).
+                Button("Reload") { model.reloadCurrent() }.keyboardShortcut("r")
             }
             CommandGroup(after: .sidebar) {
                 ForEach(Array(Section.allCases.enumerated()), id: \.element) { i, s in
