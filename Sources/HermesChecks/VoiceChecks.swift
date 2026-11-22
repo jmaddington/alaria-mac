@@ -1,6 +1,6 @@
 @preconcurrency import AVFAudio
 import Foundation
-@testable import HermesKit
+import HermesKit
 
 /// TTS -> 16 kHz -> VAD + on-device STT round trip. No mic, speakers or screen needed. HERMES_CHECK_VOICE=1.
 func runVoiceChecks() {

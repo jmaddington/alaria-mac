@@ -12,7 +12,7 @@ public struct HermesError: LocalizedError, Sendable {
 
     /// Parses the THREE error envelopes Hermes uses: OpenAI-style `{"error":{message,code}}` (API server),
     /// bare `{"error":"..."}` (jobs API), FastAPI `{"detail": str|obj}` (dashboard).
-    static func from(status: Int, data: Data) -> HermesError {
+    public static func from(status: Int, data: Data) -> HermesError {
         let obj = try? JSONSerialization.jsonObject(with: data)
         if let d = obj as? [String: Any] {
             if let e = d["error"] as? [String: Any] {

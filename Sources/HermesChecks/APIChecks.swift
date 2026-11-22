@@ -1,5 +1,5 @@
 import Foundation
-@testable import HermesKit
+import HermesKit
 
 /// Unit checks for the SSE parser, plus live checks against scripts/dev-hermes.sh when dev/hermes-home/.env exists.
 /// HERMES_CHECK_CHAT=1 also runs one real streamed chat turn (slow on a local model).

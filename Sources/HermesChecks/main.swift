@@ -1,5 +1,5 @@
 import Foundation
-@testable import HermesKit
+import HermesKit
 
 // Minimal check runner (see Package.swift note). Each check is a named closure; failures are collected.
 nonisolated(unsafe) var failures: [String] = []
