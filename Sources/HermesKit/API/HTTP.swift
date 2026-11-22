@@ -18,7 +18,8 @@ public struct HermesError: LocalizedError, Sendable {
             if let e = d["error"] as? [String: Any] {
                 return HermesError(status: status, message: e["message"] as? String ?? "Request failed", code: e["code"] as? String)
             }
-            if let e = d["error"] as? String { return HermesError(status: status, message: e) }
+            // Bare string errors may carry a top-level code, e.g. the /p/<profile>/ 404 {"error":..,"code":"profile_unknown"}.
+            if let e = d["error"] as? String { return HermesError(status: status, message: e, code: d["code"] as? String) }
             if let e = d["detail"] as? String { return HermesError(status: status, message: e) }
             if let e = d["detail"] { return HermesError(status: status, message: "\(e)") }
         }
@@ -44,6 +45,10 @@ public struct Endpoint: Sendable, Equatable, Codable {
 public final class HTTPCore: Sendable {
     public let endpoint: Endpoint
     let session: URLSession
+    /// Prepended to every path: `/p/<profile>` routes API-server calls to a multiplexed profile.
+    public let pathPrefix: String
+    /// Merged into every query: `profile=<name>` scopes dashboard calls to a profile.
+    public let fixedQuery: [String: String]
     static let decoder: JSONDecoder = {
         let d = JSONDecoder()
         d.keyDecodingStrategy = .convertFromSnakeCase
@@ -62,6 +67,27 @@ public final class HTTPCore: Sendable {
         cfg.timeoutIntervalForResource = 60 * 60 // streams can run for a long agent turn
         cfg.waitsForConnectivity = false
         session = URLSession(configuration: cfg)
+        pathPrefix = ""
+        fixedQuery = [:]
+    }
+
+    init(endpoint: Endpoint, session: URLSession, pathPrefix: String, fixedQuery: [String: String]) {
+        self.endpoint = endpoint; self.session = session; self.pathPrefix = pathPrefix; self.fixedQuery = fixedQuery
+    }
+
+    /// A copy that shares this core's URLSession but routes every call through `pathPrefix` / `fixedQuery`
+    /// (and optionally another token: a named profile has its own API_SERVER_KEY).
+    func scoped(pathPrefix: String = "", fixedQuery: [String: String] = [:], token: String? = nil) -> HTTPCore {
+        var e = endpoint
+        if let token { e.token = token }
+        return HTTPCore(endpoint: e, session: session, pathPrefix: pathPrefix, fixedQuery: fixedQuery)
+    }
+
+    /// The URL a call to `path` goes to, after the profile prefix and fixed query are applied.
+    public func url(_ path: String, query: [String: String?] = [:]) -> URL {
+        var q = query
+        for (k, v) in fixedQuery where q[k] == nil { q[k] = v }
+        return Self.url(base: endpoint.baseURL, path: pathPrefix + path, query: q)
     }
 
     /// Builds a request URL. `path` is ALREADY percent-encoded (HermesClient.path escapes ids), so it goes into
@@ -80,7 +106,7 @@ public final class HTTPCore: Sendable {
     }
 
     func request(_ method: String, _ path: String, query: [String: String?] = [:], body: Data? = nil) -> URLRequest {
-        var r = URLRequest(url: Self.url(base: endpoint.baseURL, path: path, query: query))
+        var r = URLRequest(url: url(path, query: query))
         r.httpMethod = method
         endpoint.applyAuth(&r)
         r.setValue("application/json", forHTTPHeaderField: "Accept")

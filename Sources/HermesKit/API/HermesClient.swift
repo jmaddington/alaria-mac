@@ -9,10 +9,36 @@ import Foundation
 public final class HermesClient: Sendable {
     public let api: HTTPCore
     public let dash: HTTPCore?
+    /// The Hermes profile every call is scoped to; nil = the gateway's own (launch) profile, unprefixed.
+    public let profile: String?
+    /// Unscoped cores: the dashboard for profile management (`/api/profiles*`), the API server to re-scope from.
+    let rootDash: HTTPCore?
+    let rootAPI: HTTPCore
 
     public init(api: Endpoint, dashboard: Endpoint?) {
         self.api = HTTPCore(endpoint: api)
         self.dash = dashboard.map(HTTPCore.init(endpoint:))
+        self.rootDash = dash
+        self.rootAPI = self.api
+        self.profile = nil
+    }
+
+    private init(api: HTTPCore, dash: HTTPCore?, rootAPI: HTTPCore, rootDash: HTTPCore?, profile: String?) {
+        self.api = api; self.dash = dash; self.rootAPI = rootAPI; self.rootDash = rootDash; self.profile = profile
+    }
+
+    /// A client for another Hermes profile on the same servers (see Profiles.swift). API-server calls go to
+    /// `/p/<profile>/...` (needs `gateway.multiplex_profiles`), dashboard calls carry `?profile=<profile>`.
+    /// `apiKey` replaces the API key: a named profile authenticates with ITS OWN API_SERVER_KEY (fail closed).
+    /// nil profile = back to the unscoped launch profile. Shares the URLSessions.
+    // AIDEV-NOTE: every API/dash call must go through `api`/`dash` (never rootDash) or it silently hits the wrong profile.
+    public func scoped(to profile: String?, apiKey: String? = nil) -> HermesClient {
+        guard let profile = profile.map(HermesProfile.normalize), !profile.isEmpty else {
+            return HermesClient(api: rootAPI, dash: rootDash, rootAPI: rootAPI, rootDash: rootDash, profile: nil)
+        }
+        return HermesClient(api: rootAPI.scoped(pathPrefix: HermesProfile.routePrefix(profile), token: apiKey),
+                            dash: rootDash?.scoped(fixedQuery: ["profile": profile]),
+                            rootAPI: rootAPI, rootDash: rootDash, profile: profile)
     }
 
     public var hasDashboard: Bool { dash != nil }
