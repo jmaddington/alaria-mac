@@ -9,3 +9,7 @@ dev/
 .swiftpm/
 .DS_Store
 .claude/worktrees/
+
+# Beads / Dolt files (added by bd init)
+.beads/proxieddb/
+*.gate.lock*

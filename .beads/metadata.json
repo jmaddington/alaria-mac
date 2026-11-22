@@ -1,7 +1,10 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "embedded",
+  "dolt_mode": "server",
+  "dolt_server_host": "100.72.164.86",
+  "dolt_server_port": 3307,
+  "dolt_server_user": "beads",
   "dolt_database": "hermes_mac",
   "project_id": "20c7c678-fe74-44c1-b8c8-9aea51830657"
 }
