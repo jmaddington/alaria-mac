@@ -12,9 +12,10 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
         } content: {
             content
+                .id(model.profiles.current) // a profile switch rebuilds panes so their .task loaders run again
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 420)
         } detail: {
-            detail
+            detail.id(model.profiles.current)
         }
         .overlay(alignment: .bottom) { ToastView() }
         .overlay { if model.voice.isActive || isVoiceError { VoiceOverlay().transition(.opacity) } }
@@ -22,6 +23,7 @@ struct RootView: View {
         // Voice mode owns the whole window; toolbar glass buttons would otherwise float over the overlay.
         .toolbar(model.voice.isActive || isVoiceError ? .hidden : .automatic, for: .windowToolbar)
         .sheet(isPresented: $model.showOnboarding) { OnboardingView().environment(model) }
+        .profileSheets(model)
     }
 
     private var isVoiceError: Bool { if case .error = model.voice.phase { return true }; return false }
@@ -69,7 +71,9 @@ struct Sidebar: View {
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .bottom) { ConnectionBadge().padding(12) }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 8) { ProfileSwitcher(); ConnectionBadge() }.padding(12)
+        }
     }
 }
 

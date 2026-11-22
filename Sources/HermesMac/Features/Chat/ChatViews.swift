@@ -213,8 +213,10 @@ struct ConversationView: View {
     }
 
     private var subtitle: String {
-        guard let s = chats.selectedSession else { return "" }
-        return [s.model, s.messageCount.map { "\($0) messages" }].compactMap { $0 }.joined(separator: " · ")
+        let ps = model.profiles
+        let profile = ps.isMulti ? ps.label(ps.current) : nil // chats live in one profile; say which
+        guard let s = chats.selectedSession else { return profile ?? "" }
+        return [profile, s.model, s.messageCount.map { "\($0) messages" }].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -280,7 +282,7 @@ struct EntryView: View {
         case .user:
             HStack {
                 Spacer(minLength: 80)
-                Text(entry.text)
+                Text(MentionStyle.attributed(entry.text, model.profiles))
                     .textSelection(.enabled)
                     .lineSpacing(3)
                     .padding(.horizontal, 15).padding(.vertical, 10)
@@ -440,11 +442,12 @@ struct Composer: View {
         .frame(maxWidth: Theme.readingWidth + 40)
         .padding(.horizontal, 24).padding(.bottom, 18).padding(.top, 6)
         .disabled(model.client == nil)
+        .profileMentions(focused: focused) // @profile autocomplete + routing hint (Features/Profiles)
         .onAppear { focused = true }
         .onChange(of: chats.selection) { focused = true }
     }
 
-    private func send() { model.chats.send(model.chats.draft) }
+    private func send() { model.chats.sendRouted(model.chats.draft) }
 }
 
 /// Wrapping row layout for chips.
