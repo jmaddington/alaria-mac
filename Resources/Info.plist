@@ -19,8 +19,10 @@
     <!-- AIDEV-NOTE: Hermes hosts are commonly plain http on localhost or a tailnet; ATS would block those. -->
     <key>NSAppTransportSecurity</key>
     <dict>
+        <!-- AIDEV-NOTE: do NOT add NSAllowsLocalNetworking: when present, macOS ignores NSAllowsArbitraryLoads and
+             blocks plain http to tailnet/LAN IPs like 100.x (user hit this 2026-11-22). Plain http to public hosts is
+             warned about in Settings > Connection (ConnectionSecurity). -->
         <key>NSAllowsArbitraryLoads</key><true/>
-        <key>NSAllowsLocalNetworking</key><true/>
     </dict>
 </dict>
 </plist>
