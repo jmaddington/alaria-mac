@@ -209,14 +209,19 @@ public struct OpenAIVoice: TextToSpeech {
             log.error("tts empty audio from \(url.absoluteString, privacy: .public) [VOX-TTS-EMPTY]")
             throw STTError(message: "The speech server returned no audio")
         }
-        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-tts-\(UUID().uuidString).wav")
-        try data.write(to: tmp)
-        defer { try? FileManager.default.removeItem(at: tmp) }
-        let file = try AVAudioFile(forReading: tmp)
-        guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else {
-            throw STTError(message: "Audio buffer allocation failed")
-        }
-        try file.read(into: buf)
-        return buf
+        return try decodeAudio(data, ext: "wav")
     }
+}
+
+/// Encoded audio (wav/mp3/...) -> PCM buffer, via a temp file (AVAudioFile reads files, not Data).
+func decodeAudio(_ data: Data, ext: String) throws -> AVAudioPCMBuffer {
+    let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-tts-\(UUID().uuidString).\(ext)")
+    try data.write(to: tmp)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+    let file = try AVAudioFile(forReading: tmp)
+    guard let buf = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)) else {
+        throw STTError(message: "Audio buffer allocation failed")
+    }
+    try file.read(into: buf)
+    return buf
 }

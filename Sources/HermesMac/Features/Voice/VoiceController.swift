@@ -9,8 +9,8 @@ private let vlog = Logger(subsystem: "net.jmaddington.hermes", category: "voice"
 
 enum VoiceSTT: String, CaseIterable, Identifiable { case apple, openai; var id: String { rawValue }
     var label: String { self == .apple ? "On-device (Apple)" : "OpenAI" } }
-enum VoiceTTS: String, CaseIterable, Identifiable { case system, local, openai; var id: String { rawValue }
-    var label: String { switch self { case .system: "System voice"; case .local: "Local server"; case .openai: "OpenAI" } } }
+enum VoiceTTS: String, CaseIterable, Identifiable { case system, local, google, openai; var id: String { rawValue }
+    var label: String { switch self { case .system: "System voice"; case .local: "Local server"; case .google: "Google"; case .openai: "OpenAI" } } }
 
 /// Voice preferences; secrets in the Keychain.
 struct VoicePrefs {
@@ -23,6 +23,8 @@ struct VoicePrefs {
     @MainActor static var sttPrompt: String { UserDefaults.standard.string(forKey: "voice.sttPrompt") ?? "" }
     @MainActor static var rate: Float { Float((UserDefaults.standard.object(forKey: "voice.rate") as? NSNumber)?.doubleValue ?? 0.52) } // stored as Double by @AppStorage (hermes-mac-jgg)
     static var openAIKey: String? { Keychain.get("openaiKey") }
+    static var googleKey: String? { Keychain.get("googleKey") }
+    @MainActor static var googleVoice: String { UserDefaults.standard.string(forKey: "voice.googleVoice") ?? "en-US-Chirp3-HD-Aoede" }
     /// Speed multiplier for the network/local engines (system voice uses `rate`) (hermes-mac-8l8).
     @MainActor static var speed: Double { (UserDefaults.standard.object(forKey: "voice.speed") as? NSNumber)?.doubleValue ?? 1.0 }
     // Local OpenAI-compatible TTS (scripts/dev-tts.sh runs mlx-audio + Kokoro on :8880).
@@ -199,6 +201,9 @@ final class VoiceController {
         case .openai:
             guard let k = VoicePrefs.openAIKey, !k.isEmpty else { throw STTError(message: "Add an OpenAI key in Settings › Voice, or use a system voice.") }
             tts = OpenAIVoice(apiKey: k, voice: VoicePrefs.openAIVoice, speed: VoicePrefs.speed)
+        case .google:
+            guard let k = VoicePrefs.googleKey, !k.isEmpty else { throw STTError(message: "Add a Google Cloud API key in Settings › Voice, or use another voice.") }
+            tts = GoogleVoice(apiKey: k, voice: VoicePrefs.googleVoice, speakingRate: VoicePrefs.speed)
         }
     }
 

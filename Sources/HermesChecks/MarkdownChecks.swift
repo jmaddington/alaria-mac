@@ -73,3 +73,16 @@ func runSecurityChecks() {
         }
     }
 }
+
+/// Google Cloud TTS wire format (hermes-mac-h2i).
+func runGoogleTTSChecks() {
+    check("google tts: request body and language code") {
+        let v = GoogleVoice(apiKey: "k", voice: "en-GB-Chirp3-HD-Kore", speakingRate: 1.2)
+        expect(GoogleVoice.languageCode(of: "en-GB-Chirp3-HD-Kore") == "en-GB")
+        let b = v.requestBody("Hi.")
+        expect((b["voice"] as? [String: Any])?["name"] as? String == "en-GB-Chirp3-HD-Kore")
+        expect((b["audioConfig"] as? [String: Any])?["audioEncoding"] as? String == "LINEAR16")
+        expect((b["audioConfig"] as? [String: Any])?["speakingRate"] as? Double == 1.2)
+        expect((GoogleVoice(apiKey: "k").requestBody("x")["audioConfig"] as? [String: Any])?["speakingRate"] == nil, "rate 1.0 omitted")
+    }
+}

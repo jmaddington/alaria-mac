@@ -95,6 +95,11 @@ struct VoicePane: View {
     @AppStorage("voice.localModel") private var localModel = "mlx-community/Kokoro-82M-bf16"
     @AppStorage("voice.localVoice") private var localVoice = "af_heart"
     @AppStorage("voice.speed") private var speed: Double = 1.0
+    @AppStorage("voice.googleVoice") private var googleVoice = "en-US-Chirp3-HD-Aoede"
+    @ViewState private var googleKey = Keychain.get("googleKey") ?? ""
+    @ViewState private var googleVoices: [String] = []
+    /// Shown before the voices list loads (or without a key): the Chirp 3 HD set.
+    static let chirpVoices = ["Aoede", "Kore", "Leda", "Zephyr", "Puck", "Charon", "Fenrir", "Orus"].map { "en-US-Chirp3-HD-\($0)" }
     @AppStorage("voice.sttModel") private var sttModel = "gpt-transcribe"
     @AppStorage("voice.sttPrompt") private var sttPrompt = ""
     @AppStorage("voice.bargeIn") private var bargeIn = true
@@ -137,6 +142,18 @@ struct VoicePane: View {
                     Slider(value: $speed, in: 0.8...1.4, step: 0.05) { Text("Speed") } minimumValueLabel: { Image(systemName: "tortoise") } maximumValueLabel: { Image(systemName: "hare") }
                     Button(previewing ? "Playing…" : "Preview") { Task { await preview() } }.disabled(previewing)
                     if let previewError { Text(previewError).font(.caption).foregroundStyle(.red) }
+                } else if tts == VoiceTTS.google.rawValue {
+                    SecureField("Google Cloud API key", text: $googleKey, prompt: Text(googleKey.isEmpty ? "AIza…" : "Saved in Keychain"))
+                        .onChange(of: googleKey) { Keychain.set("googleKey", googleKey); Task { await loadGoogleVoices() } }
+                    Picker("Voice", selection: $googleVoice) {
+                        ForEach(googleVoices.isEmpty ? Self.chirpVoices : googleVoices, id: \.self) { Text(Self.googleLabel($0)).tag($0) }
+                        if !(googleVoices.isEmpty ? Self.chirpVoices : googleVoices).contains(googleVoice) { Text(Self.googleLabel(googleVoice)).tag(googleVoice) }
+                    }
+                    Slider(value: $speed, in: 0.8...1.4, step: 0.05) { Text("Speed") } minimumValueLabel: { Image(systemName: "tortoise") } maximumValueLabel: { Image(systemName: "hare") }
+                    Button(previewing ? "Playing…" : "Preview") { Task { await preview() } }.disabled(previewing || googleKey.isEmpty)
+                    if let previewError { Text(previewError).font(.caption).foregroundStyle(.red) }
+                    Text("Uses Google Cloud Text-to-Speech (Chirp 3 HD voices). Create a key restricted to the Text-to-Speech API in Google Cloud Console.")
+                        .font(.caption).foregroundStyle(.secondary)
                 } else {
                     Picker("Voice", selection: $openaiVoice) {
                         ForEach(["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"], id: \.self) { Text($0.capitalized).tag($0) }
@@ -155,6 +172,20 @@ struct VoicePane: View {
         }
         .formStyle(.grouped)
         .frame(minHeight: 520)
+        .task(id: tts) { if tts == VoiceTTS.google.rawValue { await loadGoogleVoices() } }
+    }
+
+    /// "en-US-Chirp3-HD-Aoede" -> "Aoede (Chirp 3 HD)".
+    static func googleLabel(_ name: String) -> String {
+        let parts = name.split(separator: "-")
+        guard parts.count >= 3 else { return name }
+        let kind = parts.dropFirst(2).dropLast().joined(separator: " ").replacingOccurrences(of: "Chirp3 HD", with: "Chirp 3 HD")
+        return "\(parts.last!) (\(kind))"
+    }
+
+    private func loadGoogleVoices() async {
+        guard !googleKey.isEmpty else { googleVoices = []; return }
+        do { googleVoices = try await GoogleVoice.voices(apiKey: googleKey) } catch { googleVoices = [] }
     }
 
     private func quality(_ v: AVSpeechSynthesisVoice) -> String {
@@ -171,6 +202,7 @@ struct VoicePane: View {
             switch VoiceTTS(rawValue: tts) ?? .system {
             case .local: buf = try await VoicePrefs.localVoice().render(line)
             case .openai: buf = try await OpenAIVoice(apiKey: key, voice: openaiVoice, speed: speed).render(line)
+            case .google: buf = try await GoogleVoice(apiKey: googleKey, voice: googleVoice, speakingRate: speed).render(line)
             case .system: buf = try await SystemVoice(voiceIdentifier: systemVoice.isEmpty ? nil : systemVoice, rate: Float(rate)).render(line)
             }
             previewError = nil
