@@ -23,7 +23,21 @@ struct SkillsList: View {
                 }
                 .listStyle(.inset)
                 .scrollContentBackground(.hidden)
-                .searchable(text: $lib.skillFilter, placement: .sidebar, prompt: "Filter skills")
+                // AIDEV-NOTE: not .searchable. In the toolbar, the search field + Save/Revert/mode overflowed at narrow
+                // widths and shifted the whole window layout up under the title bar (hermes-mac-x0h).
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Filter skills", text: $lib.skillFilter).textFieldStyle(.plain)
+                        if !lib.skillFilter.isEmpty {
+                            Button { lib.skillFilter = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
+                                .buttonStyle(.plain).accessibilityLabel("Clear filter")
+                        }
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.6)))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                }
                 .overlay { if lib.skills.isEmpty && lib.skillsLoading { ProgressView() } }
                 .refreshable { await lib.loadSkills() }
                 .onChange(of: lib.skills) {
@@ -170,10 +184,13 @@ struct SkillDetail: View {
                     if let p = s.provenance { Pill(text: p, color: p == "agent" ? .purple : p == "hub" ? .blue : .secondary) }
                     if dirty { Pill(text: "Edited", color: .orange) }
                 }
-                Text(s.description ?? "").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                // No fixedSize here: measured at minimum width it demanded a huge min height, which pushed the whole
+                // window layout up under the title bar at small window sizes (hermes-mac-x0h).
+                Text(s.description ?? "").foregroundStyle(.secondary).lineLimit(1...3)
                 if let path { Text(Self.shortPath(path)).font(.caption).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1).truncationMode(.middle) }
             }
-            Spacer()
+            .layoutPriority(1)
+            Spacer(minLength: 12)
             VStack(alignment: .trailing, spacing: 8) {
                 Toggle("Enabled", isOn: Binding(get: { s.enabled ?? true }, set: { v in
                     guard let c = model.client else { return }
@@ -185,6 +202,7 @@ struct SkillDetail: View {
                 })).toggleStyle(.switch).controlSize(.small)
                 if s.provenance == "hub" { Button("Uninstall…", role: .destructive) { confirmUninstall = true }.controlSize(.small) }
             }
+            .fixedSize() // toggles keep their natural width; the description takes what's left
         }
         .padding(20)
     }
