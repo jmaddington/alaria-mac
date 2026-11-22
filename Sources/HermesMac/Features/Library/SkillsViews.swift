@@ -16,7 +16,7 @@ struct SkillsList: View {
                     ForEach(categories, id: \.self) { cat in
                         SwiftUI.Section(Self.title(cat)) {
                             ForEach(filtered.filter { Self.cat($0) == cat }) { s in
-                                SkillRow(skill: s).hoverRow().tag(Optional(s.name)).id(s.name)
+                                SkillRow(skill: s).hoverRow().tag(Optional(s.name))
                             }
                         }
                     }

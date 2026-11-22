@@ -34,14 +34,14 @@ struct SessionList: View {
                 ForEach(groups, id: \.title) { g in
                     SwiftUI.Section(g.title) {
                         ForEach(g.items) { s in
-                            SessionRow(session: s).hoverRow().tag(Optional(s.id)).id(s.id).contextMenu { menu(for: s) }
+                            SessionRow(session: s).hoverRow().tag(Optional(s.id)).contextMenu { menu(for: s) }
                         }
                     }
                 }
                 if !chats.archived.isEmpty {
                     SwiftUI.Section(isExpanded: $showArchived) {
                         ForEach(chats.archived) { s in
-                            SessionRow(session: s).opacity(0.7).hoverRow().tag(Optional(s.id)).id(s.id)
+                            SessionRow(session: s).opacity(0.7).hoverRow().tag(Optional(s.id))
                                 .contextMenu { Button("Unarchive") { chats.unarchive(s) } }
                         }
                     } header: { Text("Archived (\(chats.archived.count))") }
@@ -57,6 +57,9 @@ struct SessionList: View {
         .task(id: chats.sessions.count) { await chats.loadArchived() }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
+        // AIDEV-NOTE: macOS List measured rows loaded at launch as one line (preview clipped) until the list was
+        // rebuilt; a two-line minimum row height keeps them right from the first frame (hermes-mac-0hs).
+        .environment(\.defaultMinListRowHeight, 50)
         .overlay {
             if chats.sessions.isEmpty && !chats.loadingSessions && chats.searchText.isEmpty {
                 EmptyState(symbol: "bubble.left.and.bubble.right", title: "No chats yet", message: "Start a conversation and it will appear here.")
