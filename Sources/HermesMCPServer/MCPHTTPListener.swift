@@ -33,7 +33,9 @@ public final class MCPHTTPListener: @unchecked Sendable {
     public func start() async throws -> UInt16 {
         let params = NWParameters.tcp
         params.acceptLocalOnly = true
-        params.allowLocalEndpointReuse = true
+        // AIDEV-NOTE: security; never allow endpoint reuse (SO_REUSEADDR/PORT). With it, another local process could
+        // bind the same port and receive Hermes' requests, bearer token included. A taken port must fail EADDRINUSE.
+        params.allowLocalEndpointReuse = false
         guard let nwPort = NWEndpoint.Port(rawValue: requestedPort) else { throw ListenError.failed("Bad port \(requestedPort)") }
         params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: nwPort)
         let l: NWListener

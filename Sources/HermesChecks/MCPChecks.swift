@@ -178,6 +178,15 @@ func runMCPChecks() {
         waitPumpingRunLoop(timeout: 10) { done }
         guard port != 0 else { expect(false, "listener did not start: \(failure ?? "?")"); return }
         defer { listener.stop() }
+        // Security: a second bind of the same port must fail (no endpoint reuse that could intercept the token).
+        let squatter = MCPHTTPListener(port: port, router: router)
+        var squatErr: String?; var squatDone = false
+        Task {
+            do { _ = try await squatter.start(); squatter.stop() } catch { squatErr = error.localizedDescription }
+            squatDone = true
+        }
+        waitPumpingRunLoop(timeout: 10) { squatDone }
+        expect(squatErr?.contains("already in use") == true, "second listener on \(port) must fail: \(squatErr ?? "it bound")")
         func post(_ body: String, token: String = "sekret") -> (Int, JSONValue?) {
             var r = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/mcp")!)
             r.httpMethod = "POST"; r.httpBody = Data(body.utf8)
