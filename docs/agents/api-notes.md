@@ -24,3 +24,12 @@ Gotchas found on the wire:
 ## Session source vs chat admission (found 2026-11-22 in GUI testing)
 `POST /api/sessions` accepts any `source`, but `/api/sessions/{id}/chat/stream` refuses (`permission_denied`)
 sessions whose source is not `api_server` or `bot_room`. Never send `source`; the default is `api_server`.
+
+## Attachments (read from api_server.py 2026-11-22; beads hermes-mac-ard / -6uj)
+- `/api/sessions/{id}/chat/stream` body `message` (or `input`): a string or OpenAI-style parts. Accepted part types:
+  `text`/`input_text`/`output_text` and `image_url`/`input_image` (`data:image/...;base64,` or http(s) URL).
+  `file`/`input_file` and non-image data URLs -> 400 `unsupported_content_type`. No upload endpoint on the API server.
+- Limits: 10 MB request body (413 `body_too_large`), 64 KiB text (silently truncated), 10 images/turn,
+  `gateway.max_inbound_media_bytes` (default 128 MB). Image-only turns get the text "What do you see in this image?".
+- Stored user rows are TEXT: each image -> `[Image attached at: <server path>]` + `[screenshot]` lines; history can't
+  return pixels. Text files are inlined client-side as `[Attached file: name]` + fenced block (ContentParts.swift).
