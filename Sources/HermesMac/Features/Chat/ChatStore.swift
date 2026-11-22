@@ -236,13 +236,49 @@ final class ChatStore {
         app?.run("Pin") { _ = try await client.updateSession(s.id, pinned: !(s.pinned ?? false)); await self.reload() }
     }
 
+    // AIDEV-NOTE: GET /api/sessions can't include archived chats (no include_archived), so the app remembers what it
+    // archived to offer an Archived section + Unarchive (hermes-mac-d2w). Chats archived elsewhere stay invisible.
+    var archived: [HermesSession] = []
+    private var archivedIDs: [String] {
+        get { UserDefaults.standard.stringArray(forKey: "chats.archivedIDs") ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: "chats.archivedIDs") }
+    }
+    /// Set to a session id to have the list scroll to it (new or duplicated chats can sort off-screen).
+    var scrollTarget: String?
+
     func archive(_ s: HermesSession) {
         guard let client else { return }
         app?.run("Archive") {
             _ = try await client.updateSession(s.id, archived: true)
+            self.archivedIDs = [s.id] + self.archivedIDs.filter { $0 != s.id }
             if self.selection == s.id { self.newChat() }
             await self.reload()
+            self.app?.flash("Archived “\(s.displayTitle)”")
         }
+    }
+
+    func unarchive(_ s: HermesSession) {
+        guard let client else { return }
+        app?.run("Unarchive") {
+            _ = try await client.updateSession(s.id, archived: false)
+            self.archivedIDs.removeAll { $0 == s.id }
+            await self.reload()
+            self.select(s.id); self.scrollTarget = s.id
+        }
+    }
+
+    func loadArchived() async {
+        guard let client else { return }
+        var found: [HermesSession] = [], gone: [String] = []
+        for id in archivedIDs.prefix(50) {
+            do {
+                let s = try await client.session(id)
+                if s.archived == true { found.append(s) } else { gone.append(id) } // unarchived elsewhere
+            } catch let e as HermesError where e.status == 404 { gone.append(id) }
+            catch { app?.report("Couldn't load archived chats", error); break }
+        }
+        if !gone.isEmpty { archivedIDs.removeAll { gone.contains($0) } }
+        archived = found
     }
 
     func delete(_ s: HermesSession) {
@@ -260,6 +296,8 @@ final class ChatStore {
             let n = try await client.forkSession(s.id, title: "\(s.displayTitle) (copy)")
             await self.reload()
             self.select(n.id)
+            self.scrollTarget = n.id // the copy keeps the original's dates, so it may sort off-screen (hermes-mac-vcc)
+            self.app?.flash("Duplicated as “\(n.displayTitle)”")
         }
     }
 

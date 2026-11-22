@@ -7,6 +7,7 @@ struct SessionList: View {
     @Environment(AppModel.self) private var model
     @ViewState private var renaming: HermesSession?
     @ViewState private var deleting: HermesSession?
+    @ViewState private var showArchived = false
     @ViewState private var newTitle = ""
 
     private var chats: ChatStore { model.chats }
@@ -14,6 +15,7 @@ struct SessionList: View {
     var body: some View {
         @Bindable var chats = model.chats
         let selection = Binding<String?>(get: { chats.selection }, set: { chats.select($0) })
+        ScrollViewReader { proxy in
         List(selection: selection) {
             if !chats.searchText.isEmpty && model.client?.hasDashboard == true {
                 SwiftUI.Section("Matches") {
@@ -32,12 +34,27 @@ struct SessionList: View {
                 ForEach(groups, id: \.title) { g in
                     SwiftUI.Section(g.title) {
                         ForEach(g.items) { s in
-                            SessionRow(session: s).hoverRow().tag(Optional(s.id)).contextMenu { menu(for: s) }
+                            SessionRow(session: s).hoverRow().tag(Optional(s.id)).id(s.id).contextMenu { menu(for: s) }
                         }
                     }
                 }
+                if !chats.archived.isEmpty {
+                    SwiftUI.Section(isExpanded: $showArchived) {
+                        ForEach(chats.archived) { s in
+                            SessionRow(session: s).opacity(0.7).hoverRow().tag(Optional(s.id)).id(s.id)
+                                .contextMenu { Button("Unarchive") { chats.unarchive(s) } }
+                        }
+                    } header: { Text("Archived (\(chats.archived.count))") }
+                }
             }
         }
+        .onChange(of: chats.scrollTarget) {
+            guard let t = chats.scrollTarget else { return }
+            withAnimation(.smooth) { proxy.scrollTo(t, anchor: .center) }
+            chats.scrollTarget = nil
+        }
+        }
+        .task(id: chats.sessions.count) { await chats.loadArchived() }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .overlay {

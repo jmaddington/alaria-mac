@@ -16,6 +16,7 @@ final class LibraryStore {
     /// Unsaved editor text per skill / job (key "new" = the New Job form). Lives here, not in the views, so
     /// switching skill, job or section never throws edits away (hermes-mac-fz5). Cleared on Save/Revert.
     var skillDrafts: [String: String] = [:]
+    var skillScrollTarget: String?
     var jobDrafts: [String: HermesClient.JobDraft] = [:]
 
     /// Forget everything from the previous server (connection settings changed).

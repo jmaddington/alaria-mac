@@ -11,11 +11,12 @@ struct SkillsList: View {
         Group {
             if model.client?.hasDashboard != true { NeedsDashboard(feature: "Skills") }
             else {
+                ScrollViewReader { proxy in
                 List(selection: $lib.skillSelection) {
                     ForEach(categories, id: \.self) { cat in
                         SwiftUI.Section(Self.title(cat)) {
                             ForEach(filtered.filter { Self.cat($0) == cat }) { s in
-                                SkillRow(skill: s).hoverRow().tag(Optional(s.name))
+                                SkillRow(skill: s).hoverRow().tag(Optional(s.name)).id(s.name)
                             }
                         }
                     }
@@ -25,6 +26,13 @@ struct SkillsList: View {
                 .searchable(text: $lib.skillFilter, placement: .sidebar, prompt: "Filter skills")
                 .overlay { if lib.skills.isEmpty && lib.skillsLoading { ProgressView() } }
                 .refreshable { await lib.loadSkills() }
+                .onChange(of: lib.skills) {
+                    guard let t = lib.skillScrollTarget, lib.skills.contains(where: { $0.name == t }) else { return }
+                    lib.skillFilter = ""
+                    withAnimation(.smooth) { proxy.scrollTo(t, anchor: .center) }
+                    lib.skillScrollTarget = nil
+                }
+                }
             }
         }
         .navigationTitle("Skills")
@@ -277,6 +285,7 @@ struct NewSkillSheet: View {
         """
         do {
             try await client.createSkill(slug, content: body, category: category.isEmpty ? nil : category)
+            model.library.skillScrollTarget = slug // 45 skills: a new one can land off-screen (hermes-mac-5ht); set before reload
             await model.library.loadSkills()
             model.library.skillSelection = slug
             dismiss()

@@ -48,6 +48,11 @@ public final class HermesClient: Sendable {
         return r.session
     }
 
+    public func session(_ id: String) async throws -> HermesSession {
+        let r: SessionEnvelope = try await api.get("/api/sessions/\(Self.path(id))")
+        return r.session
+    }
+
     public func deleteSession(_ id: String) async throws {
         try await api.send(api.request("DELETE", "/api/sessions/\(Self.path(id))"))
     }
