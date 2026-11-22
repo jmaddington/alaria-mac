@@ -11,7 +11,10 @@ struct VoiceOverlay: View {
     var body: some View {
         ZStack {
             Rectangle().fill(.ultraThinMaterial).ignoresSafeArea()
-            Rectangle().fill(Color.black.opacity(0.55)).ignoresSafeArea()
+            // Deep night-indigo wash: the content behind should read as "far away", not as a grey film over it.
+            LinearGradient(colors: [Color(red: 0.06, green: 0.06, blue: 0.13).opacity(0.93),
+                                    Color(red: 0.02, green: 0.02, blue: 0.05).opacity(0.97)],
+                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
 
             if case .error(let msg) = voice.phase {
                 VStack(spacing: 16) {
@@ -24,8 +27,10 @@ struct VoiceOverlay: View {
                 VStack(spacing: 0) {
                     Spacer()
                     Orb(phase: voice.phase, muted: voice.muted, level: voice.level, speaking: voice.outputLevel)
-                        .frame(width: 280, height: 280)
-                        .contentShape(Circle())
+                        // Canvas is larger than the sphere so the blurred glow is never clipped to a square.
+                        .frame(width: 460, height: 460)
+                        .padding(.vertical, -90)
+                        .contentShape(Circle().scale(0.55))
                         .onTapGesture { voice.toggleMute() }
                         .onLongPressGesture(minimumDuration: 0.6) { voice.stopSpeaking() }
                         .accessibilityLabel("Voice orb, \(label)")
@@ -120,7 +125,7 @@ struct Orb: View {
             let t = ctx.date.timeIntervalSinceReferenceDate
             Canvas { g, size in
                 let c = CGPoint(x: size.width / 2, y: size.height / 2)
-                let base = min(size.width, size.height) / 2 * 0.78
+                let base = min(size.width, size.height) / 2 * 0.47
                 let energy: Double = {
                     if muted { return 0 }
                     switch phase {

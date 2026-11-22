@@ -19,6 +19,8 @@ struct RootView: View {
         .overlay(alignment: .bottom) { ToastView() }
         .overlay { if model.voice.isActive || isVoiceError { VoiceOverlay().transition(.opacity) } }
         .animation(.smooth(duration: 0.35), value: model.voice.isActive)
+        // Voice mode owns the whole window; toolbar glass buttons would otherwise float over the overlay.
+        .toolbar(model.voice.isActive || isVoiceError ? .hidden : .automatic, for: .windowToolbar)
         .sheet(isPresented: $model.showOnboarding) { OnboardingView().environment(model) }
     }
 

@@ -22,7 +22,7 @@ struct HermesApp: App {
                 Button(model.voice.isActive ? "End Voice Mode" : "Start Voice Mode") {
                     model.section = .chats
                     model.voice.isActive ? model.voice.stop() : model.voice.start()
-                }.keyboardShortcut("v", modifiers: [.command, .shift])
+                }.keyboardShortcut("v", modifiers: [.command, .option])  // ⇧⌘V is commonly taken by clipboard managers
                 Button("Stop Responding") { model.chats.stop() }
                     .keyboardShortcut(".", modifiers: .command).disabled(!model.chats.isStreaming)
                 Divider()

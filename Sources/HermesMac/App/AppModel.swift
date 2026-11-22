@@ -107,6 +107,20 @@ final class AppModel {
         voice.app = self
         library.app = self
         if settings.isConfigured { connect() } else { showOnboarding = true }
+        installVoiceTestHarness()
+    }
+
+    /// Voice test seam: `HERMES_VOICE_TEST=1` at launch lets scripts/voice-inject.swift feed an audio file into
+    /// voice mode in place of the mic. Off by default so no other process can speak to Hermes as the user.
+    // AIDEV-NOTE: security; keep this gated on the launch-time env var.
+    private func installVoiceTestHarness() {
+        guard ProcessInfo.processInfo.environment["HERMES_VOICE_TEST"] == "1" else { return }
+        DistributedNotificationCenter.default().addObserver(
+            forName: .init("net.jmaddington.hermes.test.injectVoice"), object: nil, queue: .main
+        ) { [weak self] note in
+            guard let path = note.object as? String else { return }
+            MainActor.assumeIsolated { self?.voice.injectTestAudio(path: path) }
+        }
     }
 
     func apply(_ s: ConnectionSettings) {

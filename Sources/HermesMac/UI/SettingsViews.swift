@@ -73,12 +73,21 @@ struct VoicePane: View {
     @AppStorage("voice.tts") private var tts = VoiceTTS.system.rawValue
     @AppStorage("voice.systemVoice") private var systemVoice = ""
     @AppStorage("voice.openaiVoice") private var openaiVoice = "onyx"
+    @AppStorage("voice.localURL") private var localURL = "http://127.0.0.1:8880/v1/audio/speech"
+    @AppStorage("voice.localModel") private var localModel = "mlx-community/Kokoro-82M-bf16"
+    @AppStorage("voice.localVoice") private var localVoice = "af_heart"
     @AppStorage("voice.sttModel") private var sttModel = "gpt-transcribe"
     @AppStorage("voice.sttPrompt") private var sttPrompt = ""
     @AppStorage("voice.bargeIn") private var bargeIn = true
     @AppStorage("voice.rate") private var rate: Double = 0.52
     @ViewState private var key = Keychain.get("openaiKey") ?? ""
     @ViewState private var previewing = false
+    @ViewState private var previewError: String?
+    /// Kokoro-82M's American/British English voices (id, label). Other OpenAI-compatible servers: type any id.
+    static let kokoroVoices = [("af_heart", "Heart (US)"), ("af_bella", "Bella (US)"), ("af_nicole", "Nicole (US)"),
+                               ("af_sky", "Sky (US)"), ("am_michael", "Michael (US)"), ("am_fenrir", "Fenrir (US)"),
+                               ("am_puck", "Puck (US)"), ("bf_emma", "Emma (UK)"), ("bm_george", "George (UK)"),
+                               ("bm_fable", "Fable (UK)")]
 
     var body: some View {
         Form {
@@ -99,6 +108,15 @@ struct VoicePane: View {
                     }
                     Slider(value: $rate, in: 0.4...0.62) { Text("Speed") }
                     Button(previewing ? "Playing…" : "Preview") { Task { await preview() } }.disabled(previewing)
+                } else if tts == VoiceTTS.local.rawValue {
+                    TextField("Server", text: $localURL, prompt: Text("http://127.0.0.1:8880/v1/audio/speech"))
+                    TextField("Model", text: $localModel)
+                    Picker("Voice", selection: $localVoice) {
+                        ForEach(Self.kokoroVoices, id: \.0) { Text($0.1).tag($0.0) }
+                        if !Self.kokoroVoices.contains(where: { $0.0 == localVoice }) { Text(localVoice).tag(localVoice) }
+                    }
+                    Button(previewing ? "Playing…" : "Preview") { Task { await preview() } }.disabled(previewing)
+                    if let previewError { Text(previewError).font(.caption).foregroundStyle(.red) }
                 } else {
                     Picker("Voice", selection: $openaiVoice) {
                         ForEach(["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"], id: \.self) { Text($0.capitalized).tag($0) }
@@ -108,7 +126,7 @@ struct VoicePane: View {
             SwiftUI.Section {
                 SecureField("OpenAI API key", text: $key).onChange(of: key) { Keychain.set("openaiKey", key) }
             } footer: {
-                Text("Only needed for OpenAI transcription or voices. Stored in your Keychain. On-device options keep audio on this Mac.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
+                Text("Only needed for OpenAI transcription or voices. Local server: any OpenAI-compatible /v1/audio/speech, e.g. Kokoro via scripts/dev-tts.sh. Stored in your Keychain. On-device options keep audio on this Mac.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
             }
         }
         .formStyle(.grouped)
@@ -124,9 +142,13 @@ struct VoicePane: View {
         let audio = VoiceAudio()
         do {
             try audio.start(voiceProcessing: false)
-            let buf = try await SystemVoice(voiceIdentifier: systemVoice.isEmpty ? nil : systemVoice, rate: Float(rate)).render("Hi, I'm Hermes. How can I help?")
+            let line = "Hi, I'm Hermes. How can I help?"
+            let buf = tts == VoiceTTS.local.rawValue
+                ? try await VoicePrefs.localVoice().render(line)
+                : try await SystemVoice(voiceIdentifier: systemVoice.isEmpty ? nil : systemVoice, rate: Float(rate)).render(line)
+            previewError = nil
             await audio.play(buf)
-        } catch {}
+        } catch { previewError = error.localizedDescription }
         audio.stop()
     }
 }

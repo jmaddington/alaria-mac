@@ -121,10 +121,18 @@ public final class SystemVoice: TextToSpeech, @unchecked Sendable {
         self.voiceID = voiceIdentifier; self.rate = rate
     }
 
+    /// Usable voices, best first. Novelty voices (Zarvox, Bells, ...) are excluded: they sort high by name and
+    /// were picked as the default once (2026-11-22). Ties prefer the system default voice, then name A-Z.
     public static func voices() -> [AVSpeechSynthesisVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
+        let sysDefault = AVSpeechSynthesisVoice(language: nil)?.identifier
+        return AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix(Locale.current.language.languageCode?.identifier ?? "en") }
-            .sorted { ($0.quality.rawValue, $0.name) > ($1.quality.rawValue, $1.name) }
+            .filter { !$0.voiceTraits.contains(.isNoveltyVoice) }
+            .sorted {
+                if $0.quality != $1.quality { return $0.quality.rawValue > $1.quality.rawValue }
+                if ($0.identifier == sysDefault) != ($1.identifier == sysDefault) { return $0.identifier == sysDefault }
+                return $0.name < $1.name
+            }
     }
 
     public func render(_ sentence: String) async throws -> AVAudioPCMBuffer {
@@ -180,7 +188,8 @@ public struct OpenAIVoice: TextToSpeech {
     public func render(_ sentence: String) async throws -> AVAudioPCMBuffer {
         var req = URLRequest(url: url, timeoutInterval: 30)
         req.httpMethod = "POST"
-        req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        // Local OpenAI-compatible servers (mlx-audio Kokoro, ...) usually need no key.
+        if !apiKey.isEmpty { req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String: String] = ["model": model, "voice": voice, "input": sentence, "response_format": "wav"]
         if !instructions.isEmpty { body["instructions"] = instructions }
@@ -190,6 +199,11 @@ public struct OpenAIVoice: TextToSpeech {
         guard code == 200 else {
             log.error("tts http \(code) body=\(String(data: data.prefix(300), encoding: .utf8) ?? "", privacy: .public) [VOX-TTS-HTTP]")
             throw STTError(message: "Speech synthesis failed (\(code))")
+        }
+        // mlx-audio streams its response, so a failed synthesis is "200 OK" with an empty body.
+        guard data.count > 44 else {
+            log.error("tts empty audio from \(url.absoluteString, privacy: .public) [VOX-TTS-EMPTY]")
+            throw STTError(message: "The speech server returned no audio")
         }
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("hermes-tts-\(UUID().uuidString).wav")
         try data.write(to: tmp)

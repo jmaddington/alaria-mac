@@ -9,8 +9,8 @@ private let vlog = Logger(subsystem: "net.jmaddington.hermes", category: "voice"
 
 enum VoiceSTT: String, CaseIterable, Identifiable { case apple, openai; var id: String { rawValue }
     var label: String { self == .apple ? "On-device (Apple)" : "OpenAI" } }
-enum VoiceTTS: String, CaseIterable, Identifiable { case system, openai; var id: String { rawValue }
-    var label: String { self == .system ? "System voice" : "OpenAI" } }
+enum VoiceTTS: String, CaseIterable, Identifiable { case system, local, openai; var id: String { rawValue }
+    var label: String { switch self { case .system: "System voice"; case .local: "Local server"; case .openai: "OpenAI" } } }
 
 /// Voice preferences; secrets in the Keychain.
 struct VoicePrefs {
@@ -23,6 +23,16 @@ struct VoicePrefs {
     @MainActor static var sttPrompt: String { UserDefaults.standard.string(forKey: "voice.sttPrompt") ?? "" }
     @MainActor static var rate: Float { UserDefaults.standard.object(forKey: "voice.rate") as? Float ?? 0.52 }
     static var openAIKey: String? { Keychain.get("openaiKey") }
+    // Local OpenAI-compatible TTS (scripts/dev-tts.sh runs mlx-audio + Kokoro on :8880).
+    @MainActor static var localTTSURL: String { UserDefaults.standard.string(forKey: "voice.localURL") ?? "http://127.0.0.1:8880/v1/audio/speech" }
+    @MainActor static var localTTSModel: String { UserDefaults.standard.string(forKey: "voice.localModel") ?? "mlx-community/Kokoro-82M-bf16" }
+    @MainActor static var localTTSVoice: String { UserDefaults.standard.string(forKey: "voice.localVoice") ?? "af_heart" }
+    @MainActor static func localVoice() throws -> OpenAIVoice {
+        guard let u = URL(string: localTTSURL), u.scheme?.hasPrefix("http") == true else {
+            throw STTError(message: "Set a valid local speech server URL in Settings › Voice.")
+        }
+        return OpenAIVoice(apiKey: "", model: localTTSModel, voice: localTTSVoice, url: u)
+    }
 }
 
 /// Audio-thread side: VAD + utterance capture with 1 s pre-roll (drive mode keeps 1 s before detection).
@@ -109,11 +119,14 @@ final class VoiceController {
             }
             do {
                 try configureEngines()
-                let a = VoiceAudio()
-                a.onFrame = { [frames] rms, f in frames.process(rms: rms, frame: f) }
-                a.onFailure = { [weak self] msg in Task { @MainActor in self?.fail(msg) } }
                 frames.emit = { [weak self] o in Task { @MainActor in self?.handle(o) } }
-                try a.start(voiceProcessing: VoicePrefs.bargeIn)
+                let a: VoiceAudio
+                do { a = try makeAudio(voiceProcessing: VoicePrefs.bargeIn) }
+                catch where VoicePrefs.bargeIn {
+                    // Echo cancellation is a nicety (barge-in); never let it block voice mode entirely.
+                    vlog.error("engine failed with voice processing, retrying without: \(error.localizedDescription, privacy: .public) [VOX-AEC-RETRY]")
+                    a = try makeAudio(voiceProcessing: false)
+                }
                 audio = a
                 muted = false
                 frames.setListening(true)
@@ -124,6 +137,26 @@ final class VoiceController {
                 fail(error.localizedDescription)
             }
         }
+    }
+
+    /// Test harness entry: feeds a WAV/AIFF/CAF file into the live pipeline in place of the mic.
+    func injectTestAudio(path: String) {
+        guard let a = audio else { vlog.error("inject ignored: voice mode is off [VOX-INJECT-OFF]"); return }
+        do {
+            let f = try AVAudioFile(forReading: URL(fileURLWithPath: path))
+            guard let buf = AVAudioPCMBuffer(pcmFormat: f.processingFormat, frameCapacity: AVAudioFrameCount(f.length)) else { return }
+            try f.read(into: buf)
+            vlog.info("injecting \(path, privacy: .public) [VOX-INJECT]")
+            Task.detached { await a.inject(buf) }
+        } catch { vlog.error("inject failed: \(error.localizedDescription, privacy: .public) [VOX-INJECT-ERR]") }
+    }
+
+    private func makeAudio(voiceProcessing: Bool) throws -> VoiceAudio {
+        let a = VoiceAudio()
+        a.onFrame = { [frames] rms, f in frames.process(rms: rms, frame: f) }
+        a.onFailure = { [weak self] msg in Task { @MainActor in self?.fail(msg) } }
+        do { try a.start(voiceProcessing: voiceProcessing) } catch { a.stop(); throw error }
+        return a
     }
 
     func stop() {
@@ -156,6 +189,7 @@ final class VoiceController {
         }
         switch VoicePrefs.tts {
         case .system: tts = SystemVoice(voiceIdentifier: VoicePrefs.systemVoice, rate: VoicePrefs.rate)
+        case .local: tts = try VoicePrefs.localVoice()
         case .openai:
             guard let k = VoicePrefs.openAIKey, !k.isEmpty else { throw STTError(message: "Add an OpenAI key in Settings › Voice, or use a system voice.") }
             tts = OpenAIVoice(apiKey: k, voice: VoicePrefs.openAIVoice)
@@ -225,9 +259,17 @@ final class VoiceController {
             guard let chats = app?.chats else { return }
             if chats.isStreaming, let run = chats.runId, let client = app?.client {
                 // Hermes is still working: fold the words into the running turn instead of dropping them.
-                try await client.steer(run, text: text)
-                phase = .thinking
-                return
+                do {
+                    try await client.steer(run, text: text)
+                    phase = .thinking
+                    return
+                } catch {
+                    // Steer races the run's end (409 "not accepting steer input"); never drop what was said:
+                    // wait for the turn to close, then send it as the next turn.
+                    vlog.info("steer refused, sending as next turn: \(error.localizedDescription, privacy: .public) [VOX-STEER-FALLBACK]")
+                    for _ in 0..<100 where chats.isStreaming { try await Task.sleep(for: .milliseconds(100)) }
+                    guard !chats.isStreaming else { throw error }
+                }
             }
             phase = .thinking
             startTicking()
