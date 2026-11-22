@@ -3,8 +3,23 @@ import HermesKit
 import SwiftUI
 
 struct RootView: View {
+    /// Widens the key window toward the right (or left) by up to `points` within the visible screen; true if it now
+    /// has room for the browser panel without squeezing the columns.
+    @MainActor static func growWindow(by points: CGFloat) -> Bool {
+        guard let w = NSApp.keyWindow ?? NSApp.mainWindow, let screen = w.screen?.visibleFrame else { return false }
+        var f = w.frame
+        let target = min(f.width + points, screen.width)
+        guard target - f.width >= points * 0.75 else { return false }
+        f.size.width = target
+        if f.maxX > screen.maxX { f.origin.x = max(screen.minX, screen.maxX - f.width) }
+        w.setFrame(f, display: true, animate: true)
+        return true
+    }
+
     @Environment(AppModel.self) private var model
     @ViewState private var columns = NavigationSplitViewVisibility.all
+    @ViewState private var columnsBeforeBrowser: NavigationSplitViewVisibility?
+    @ViewState private var frameBeforeBrowser: NSRect?
 
     var body: some View {
         @Bindable var model = model
@@ -27,7 +42,20 @@ struct RootView: View {
         }
         .inspector(isPresented: Binding(get: { model.browser.isOpen }, set: { model.browser.isOpen = $0 })) {
             BrowserPanel()
-                .inspectorColumnWidth(min: 360, ideal: 520, max: 1000)
+                .inspectorColumnWidth(min: 360, ideal: 480, max: 1000)
+        }
+        // The panel needs room: widen the window if the screen allows, otherwise hide the sidebar while it's open
+        // (three columns + a 480 pt panel overflowed a 1240 pt window and clipped everything).
+        .onChange(of: model.browser.isOpen) { _, open in
+            if open {
+                let before = (NSApp.keyWindow ?? NSApp.mainWindow)?.frame
+                if Self.growWindow(by: 480) { frameBeforeBrowser = before }
+                else { columnsBeforeBrowser = columns; withAnimation(.smooth) { columns = .doubleColumn } }
+            } else {
+                if let f = frameBeforeBrowser, let w = NSApp.keyWindow ?? NSApp.mainWindow { w.setFrame(f, display: true, animate: true) }
+                frameBeforeBrowser = nil
+                if let prev = columnsBeforeBrowser { withAnimation(.smooth) { columns = prev }; columnsBeforeBrowser = nil }
+            }
         }
         .overlay(alignment: .bottom) { ToastView() }
         .overlay { if model.voice.isActive || isVoiceError { VoiceOverlay().transition(.opacity) } }

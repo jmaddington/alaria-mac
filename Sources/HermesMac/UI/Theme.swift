@@ -114,3 +114,24 @@ struct HoverRow: ViewModifier {
 extension View {
     func hoverRow() -> some View { modifier(HoverRow()) }
 }
+
+
+/// Search/filter field that sits at the top of a list column (used by Chats and Skills instead of .searchable,
+/// whose toolbar placement drifted over the detail column and the browser panel).
+struct InlineSearchField: View {
+    var prompt: String
+    @Binding var text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(prompt, text: $text).textFieldStyle(.plain)
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
+                    .buttonStyle(.plain).accessibilityLabel("Clear search")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.6)))
+        .padding(.horizontal, 12).padding(.vertical, 8)
+    }
+}

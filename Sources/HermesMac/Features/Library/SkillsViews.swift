@@ -25,19 +25,7 @@ struct SkillsList: View {
                 .scrollContentBackground(.hidden)
                 // AIDEV-NOTE: not .searchable. In the toolbar, the search field + Save/Revert/mode overflowed at narrow
                 // widths and shifted the whole window layout up under the title bar (hermes-mac-x0h).
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Filter skills", text: $lib.skillFilter).textFieldStyle(.plain)
-                        if !lib.skillFilter.isEmpty {
-                            Button { lib.skillFilter = "" } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary) }
-                                .buttonStyle(.plain).accessibilityLabel("Clear filter")
-                        }
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.6)))
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                }
+                .safeAreaInset(edge: .top, spacing: 0) { InlineSearchField(prompt: "Filter skills", text: $lib.skillFilter) }
                 .overlay { if lib.skills.isEmpty && lib.skillsLoading { ProgressView() } }
                 .refreshable { await lib.loadSkills() }
                 .onChange(of: lib.skills) {

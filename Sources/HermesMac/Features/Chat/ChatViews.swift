@@ -78,7 +78,10 @@ struct SessionList: View {
                 EmptyState(symbol: "bubble.left.and.bubble.right", title: "No chats yet", message: "Start a conversation and it will appear here.")
             }
         }
-        .searchable(text: $chats.searchText, placement: .sidebar, prompt: model.client?.hasDashboard == true ? "Search all chats" : "Filter chats")
+        // In the list it filters (not the window toolbar, where it floated over the detail and the browser panel).
+        .safeAreaInset(edge: .top, spacing: 0) {
+            InlineSearchField(prompt: model.client?.hasDashboard == true ? "Search all chats" : "Filter chats", text: $chats.searchText)
+        }
         .task(id: chats.searchText) {
             try? await Task.sleep(for: .milliseconds(250))
             await chats.runSearch()
