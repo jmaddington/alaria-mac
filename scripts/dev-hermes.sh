@@ -51,7 +51,13 @@ set -a; source "$HOME_DIR/.env"; set +a
 # so libraries don't try ~. Opt out only for debugging: HERMES_DEV_UNSANDBOXED=1.
 # AIDEV-NOTE: security; keep the sandbox on by default.
 mkdir -p "$HOME_DIR/home"
-SANDBOX=(sandbox-exec -f "$ROOT/scripts/hermes-sandbox.sb" -D "HOME_DIR=$HOME" -D "HERMES_HOME=$HOME_DIR"
+# SQLite/Node realpath() every parent directory: allow stat (metadata only, no listing/reading) on exactly the
+# ancestors of HERMES_HOME and HERMES_SRC, rendered into a per-run profile.
+PROFILE="$HOME_DIR/.sandbox.sb"
+{ cat "$ROOT/scripts/hermes-sandbox.sb"
+  for p in "$HOME_DIR" "$SRC"; do d=${p:h}; while [[ $d != / ]]; do print "(allow file-read-metadata (literal \"$d\"))"; d=${d:h}; done; done
+} > "$PROFILE"
+SANDBOX=(sandbox-exec -f "$PROFILE" -D "HOME_DIR=$HOME" -D "HERMES_HOME=$HOME_DIR"
          -D "HERMES_SRC=$SRC" -D "UV_PYTHON=$HOME/.local/share/uv/python" -D "SCRATCH=/private/tmp/claude-$(id -u)")
 [[ ${HERMES_DEV_UNSANDBOXED:-} == 1 ]] && SANDBOX=() && echo "WARNING: running Hermes WITHOUT the filesystem sandbox" >&2
 tmux kill-session -t $SESSION 2>/dev/null || true
@@ -64,8 +70,8 @@ for port in 8642 9119; do
 done
 ENVS=(-e HERMES_HOME="$HOME_DIR" -e HOME="$HOME_DIR/home" -e API_SERVER_KEY="$API_SERVER_KEY" -e HERMES_DASHBOARD_SESSION_TOKEN="$HERMES_DASHBOARD_SESSION_TOKEN")
 SB="${(j: :)${(q)SANDBOX[@]}}"
-tmux new-session -d -s $SESSION -n gateway "${ENVS[@]}" "$SB $SRC/venv/bin/hermes gateway 2>&1 | tee $HOME_DIR/gateway.out"
-tmux new-window -t $SESSION -n dashboard "${ENVS[@]}" "$SB $SRC/venv/bin/hermes dashboard --no-open --port 9119 2>&1 | tee $HOME_DIR/dashboard.out"
+tmux new-session -d -s $SESSION -c "$HOME_DIR" -n gateway "${ENVS[@]}" "$SB $SRC/venv/bin/hermes gateway 2>&1 | tee $HOME_DIR/gateway.out"
+tmux new-window -t $SESSION -c "$HOME_DIR" -n dashboard "${ENVS[@]}" "$SB $SRC/venv/bin/hermes dashboard --no-open --port 9119 2>&1 | tee $HOME_DIR/dashboard.out"
 
 for i in {1..60}; do
   a=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8642/health || true)
