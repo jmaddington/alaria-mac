@@ -253,6 +253,7 @@ final class ChatStore {
             self.archivedIDs = [s.id] + self.archivedIDs.filter { $0 != s.id }
             if self.selection == s.id { self.newChat() }
             await self.reload()
+            await self.loadArchived()
             self.app?.flash("Archived “\(s.displayTitle)”")
         }
     }
@@ -263,14 +264,16 @@ final class ChatStore {
             _ = try await client.updateSession(s.id, archived: false)
             self.archivedIDs.removeAll { $0 == s.id }
             await self.reload()
+            await self.loadArchived()
             self.select(s.id); self.scrollTarget = s.id
         }
     }
 
     func loadArchived() async {
         guard let client else { return }
-        var found: [HermesSession] = [], gone: [String] = []
-        for id in archivedIDs.prefix(50) {
+        // The list endpoint may return archived sessions (flagged) - use those, then fetch remembered ids it omits.
+        var found = sessions.filter { $0.archived == true }, gone: [String] = []
+        for id in archivedIDs.prefix(50) where !found.contains(where: { $0.id == id }) {
             do {
                 let s = try await client.session(id)
                 if s.archived == true { found.append(s) } else { gone.append(id) } // unarchived elsewhere

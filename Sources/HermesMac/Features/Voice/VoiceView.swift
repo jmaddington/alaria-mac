@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Full-window voice mode. Same gesture vocabulary as drive mode, adapted to a desk:
@@ -52,15 +53,22 @@ struct VoiceOverlay: View {
             }
         }
         .onKeyPress(.escape) { voice.stop(); return .handled }
-        .onKeyPress(.space) { voice.toggleMute(); return .handled }
         .focusable()
         .focused($focused)
         .focusEffectDisabled()
         // Take keyboard focus from the composer, or Esc/Space never reach the overlay (hermes-mac-6w3).
-        .onAppear { focused = true }
+        .onAppear {
+            // The composer's text field keeps first responder and swallows Space; clear it, then take focus on the
+            // next runloop turn once the overlay is in the hierarchy (hermes-mac-u4g).
+            DispatchQueue.main.async {
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                focused = true
+            }
+        }
         .background {
-            // Esc ends voice mode even if focus is somewhere else.
+            // Esc ends voice mode even if focus is somewhere else; Space mutes once no text field holds focus.
             Button("End Voice Mode") { voice.stop() }.keyboardShortcut(.cancelAction).hidden()
+            Button("Mute") { voice.toggleMute() }.keyboardShortcut(.space, modifiers: []).hidden()
         }
         .environment(\.colorScheme, .dark)
     }

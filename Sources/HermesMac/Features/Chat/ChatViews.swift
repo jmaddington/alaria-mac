@@ -39,12 +39,25 @@ struct SessionList: View {
                     }
                 }
                 if !chats.archived.isEmpty {
-                    SwiftUI.Section(isExpanded: $showArchived) {
-                        ForEach(chats.archived) { s in
-                            SessionRow(session: s).opacity(0.7).hoverRow().tag(Optional(s.id))
-                                .contextMenu { Button("Unarchive") { chats.unarchive(s) } }
+                    // Explicit disclosure button: Section(isExpanded:) shows no chevron in .inset lists (hermes-mac-wm2).
+                    SwiftUI.Section {
+                        if showArchived {
+                            ForEach(chats.archived) { s in
+                                SessionRow(session: s).opacity(0.7).hoverRow().tag(Optional(s.id))
+                                    .contextMenu { Button("Unarchive") { chats.unarchive(s) } }
+                            }
                         }
-                    } header: { Text("Archived (\(chats.archived.count))") }
+                    } header: {
+                        Button { withAnimation(.smooth) { showArchived.toggle() } } label: {
+                            HStack(spacing: 4) {
+                                Text("Archived (\(chats.archived.count))")
+                                Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                                    .rotationEffect(.degrees(showArchived ? 90 : 0))
+                            }.contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(showArchived ? "Hide archived chats" : "Show archived chats")
+                    }
                 }
             }
         }
@@ -54,7 +67,7 @@ struct SessionList: View {
             chats.scrollTarget = nil
         }
         }
-        .task(id: chats.sessions.count) { await chats.loadArchived() }
+        .task(id: chats.sessions.map { "\($0.id)\($0.archived == true)" }) { await chats.loadArchived() }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         // AIDEV-NOTE: macOS List measured rows loaded at launch as one line (preview clipped) until the list was
@@ -139,6 +152,8 @@ struct SessionRow: View {
 
 // MARK: - Conversation (detail column)
 
+private struct ScrollSpot: Equatable { var offset: CGFloat; var gap: CGFloat }
+
 struct ConversationView: View {
     @Environment(AppModel.self) private var model
     @ViewState private var followTail = true
@@ -167,9 +182,15 @@ struct ConversationView: View {
                     .scrollContentBackground(.hidden)
                     // Follow streaming text only while the reader is at the bottom; scrolling up to read
                     // earlier text must not be yanked back on every delta (hermes-mac-kiu).
-                    .onScrollGeometryChange(for: Bool.self) { g in
-                        g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
-                    } action: { _, atBottom in followTail = atBottom }
+                    // Follow only while the reader hasn't scrolled up. An upward offset change is always the user
+                    // (streaming only grows content; scrollTo only moves down); reaching the bottom resumes following.
+                    // The old "within 40 pt of bottom" check raced content growth and re-pinned mid-gesture (hermes-mac-7qk).
+                    .onScrollGeometryChange(for: ScrollSpot.self) { g in
+                        ScrollSpot(offset: g.contentOffset.y, gap: g.contentSize.height - (g.contentOffset.y + g.containerSize.height))
+                    } action: { old, new in
+                        if new.offset < old.offset - 3 { followTail = false } // small jitters come from lazy-row re-estimation
+                        else if new.gap <= 4 { followTail = true }
+                    }
                     .onChange(of: chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
                     .onChange(of: chats.entries.count) { followTail = true; withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) } }
                     .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
