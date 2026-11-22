@@ -86,3 +86,25 @@ func parseISO(_ s: String?) -> Date? {
 extension Int {
     var compact: String { formatted(.number.notation(.compactName).precision(.fractionLength(0...1))) }
 }
+
+
+/// Hover wash for navigation rows (sidebar + middle columns). macOS lists only highlight the selection, so rows
+/// felt inert under the pointer. Same rounded shape as the selection highlight, sitting just inside it.
+struct HoverRow: ViewModifier {
+    @ViewState private var hovering = false
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.primary.opacity(hovering ? 0.055 : 0))
+                    .padding(.horizontal, -7).padding(.vertical, -3)
+            }
+            .onHover { h in withAnimation(.easeOut(duration: h ? 0.08 : 0.18)) { hovering = h } }
+    }
+}
+
+extension View {
+    func hoverRow() -> some View { modifier(HoverRow()) }
+}

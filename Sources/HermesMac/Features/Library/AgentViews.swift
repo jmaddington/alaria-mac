@@ -25,7 +25,7 @@ struct ToolsList: View {
                             })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
                         }
                         .opacity(t.available == false ? 0.5 : 1)
-                        .tag(Optional(t.name))
+                        .hoverRow().tag(Optional(t.name))
                     }
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)
@@ -77,7 +77,7 @@ struct MemoryList: View {
             else {
                 List(selection: $lib.memorySelection) {
                     SwiftUI.Section("Built-in") {
-                        Label("Memory & Profile", systemImage: "brain.head.profile").tag(Optional("builtin"))
+                        Label("Memory & Profile", systemImage: "brain.head.profile").hoverRow().tag(Optional("builtin"))
                     }
                     SwiftUI.Section("Providers") {
                         ForEach(lib.memory?.providers ?? []) { p in
@@ -87,7 +87,7 @@ struct MemoryList: View {
                                 if lib.memory?.active == p.name { Pill(text: "Active", color: .green) }
                                 else if p.available == false { Pill(text: "Unavailable") }
                             }
-                            .tag(Optional(p.name))
+                            .hoverRow().tag(Optional(p.name))
                         }
                     }
                 }
@@ -158,7 +158,7 @@ struct UsagePeriods: View {
             else {
                 List(selection: Binding(get: { Optional(lib.usageDays) }, set: { lib.usageDays = $0 ?? 7 })) {
                     ForEach([(7, "Last 7 Days"), (30, "Last 30 Days"), (90, "Last 90 Days"), (365, "Last Year")], id: \.0) { d, t in
-                        Label(t, systemImage: "calendar").tag(Optional(d))
+                        Label(t, systemImage: "calendar").hoverRow().tag(Optional(d))
                     }
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)
@@ -257,7 +257,7 @@ struct LogFiles: View {
             else {
                 List(selection: Binding(get: { Optional(lib.logFile) }, set: { lib.logFile = $0 ?? "agent" })) {
                     ForEach([("agent", "Agent", "cpu"), ("errors", "Errors", "exclamationmark.octagon"), ("gateway", "Gateway", "network")], id: \.0) { f, t, s in
-                        Label(t, systemImage: s).tag(Optional(f))
+                        Label(t, systemImage: s).hoverRow().tag(Optional(f))
                     }
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)

@@ -24,7 +24,7 @@ struct SessionList: View {
                                 .font(.callout).foregroundStyle(.secondary).lineLimit(2)
                         }
                         .padding(.vertical, 3)
-                        .tag(Optional(hit.sessionId))
+                        .hoverRow().tag(Optional(hit.sessionId))
                     }
                     if chats.searchHits.isEmpty { Text("No matches").foregroundStyle(.secondary) }
                 }
@@ -32,7 +32,7 @@ struct SessionList: View {
                 ForEach(groups, id: \.title) { g in
                     SwiftUI.Section(g.title) {
                         ForEach(g.items) { s in
-                            SessionRow(session: s).tag(Optional(s.id)).contextMenu { menu(for: s) }
+                            SessionRow(session: s).hoverRow().tag(Optional(s.id)).contextMenu { menu(for: s) }
                         }
                     }
                 }

@@ -6,7 +6,7 @@ struct JobsList: View {
     var body: some View {
         @Bindable var lib = model.library
         List(selection: $lib.jobSelection) {
-            ForEach(lib.jobs) { j in JobRow(job: j).tag(Optional(j.id)) }
+            ForEach(lib.jobs) { j in JobRow(job: j).hoverRow().tag(Optional(j.id)) }
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
