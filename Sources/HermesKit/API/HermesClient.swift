@@ -80,7 +80,12 @@ public final class HermesClient: Sendable {
     /// (reasoning preview), tool.started/completed/failed, assistant.commentary, approval.request,
     /// assistant.completed, run.completed|failed|cancelled, error, done.
     public func chatStream(session: String, message: String) -> AsyncThrowingStream<ChatEvent, Error> {
-        let body = try? JSONSerialization.data(withJSONObject: ["message": message])
+        chatStream(session: session, parts: [.text(message)])
+    }
+
+    /// Streams one turn whose user message is OpenAI-style content parts (text + images); see ContentParts.swift.
+    public func chatStream(session: String, parts: [ContentPart]) -> AsyncThrowingStream<ChatEvent, Error> {
+        let body = try? ChatContent.body(parts)
         let frames = api.stream(api.request("POST", "/api/sessions/\(Self.path(session))/chat/stream", body: body))
         return AsyncThrowingStream { cont in
             let task = Task {

@@ -48,8 +48,54 @@ public struct HermesMessage: Codable, Identifiable, Hashable, Sendable {
     public var reasoning: String?
     public var reasoningContent: String?
     public var displayKind: String?
+    /// Set when the server returned `content` as a part list (text + image_url) instead of a string; `content` then
+    /// holds the joined text. Hermes main stores user rows as text, so this is forward compatibility.
+    public var contentParts: [ContentPart]?
 
     public var thinking: String? { [reasoning, reasoningContent].compactMap { $0 }.first { !$0.isEmpty } }
+
+    enum CodingKeys: String, CodingKey {
+        case id, role, content, toolCallId, toolCalls, toolName, timestamp, finishReason, reasoning, reasoningContent, displayKind
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        role = try c.decode(String.self, forKey: .role)
+        // AIDEV-NOTE: content may be a string or an OpenAI-style part list; a list must not fail the whole history.
+        switch try c.decodeIfPresent(JSONValue.self, forKey: .content) {
+        case .string(let s)?: content = s
+        case let v? where ChatContent.parts(from: v) != nil:
+            let parts = ChatContent.parts(from: v) ?? []
+            contentParts = parts
+            content = ChatContent.split(parts).text
+        case let v?: content = v == .null ? nil : v.description
+        case nil: content = nil
+        }
+        toolCallId = try c.decodeIfPresent(String.self, forKey: .toolCallId)
+        toolCalls = try c.decodeIfPresent(JSONValue.self, forKey: .toolCalls)
+        toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
+        timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
+        finishReason = try c.decodeIfPresent(String.self, forKey: .finishReason)
+        reasoning = try c.decodeIfPresent(String.self, forKey: .reasoning)
+        reasoningContent = try c.decodeIfPresent(String.self, forKey: .reasoningContent)
+        displayKind = try c.decodeIfPresent(String.self, forKey: .displayKind)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(role, forKey: .role)
+        try c.encodeIfPresent(content, forKey: .content)
+        try c.encodeIfPresent(toolCallId, forKey: .toolCallId)
+        try c.encodeIfPresent(toolCalls, forKey: .toolCalls)
+        try c.encodeIfPresent(toolName, forKey: .toolName)
+        try c.encodeIfPresent(timestamp, forKey: .timestamp)
+        try c.encodeIfPresent(finishReason, forKey: .finishReason)
+        try c.encodeIfPresent(reasoning, forKey: .reasoning)
+        try c.encodeIfPresent(reasoningContent, forKey: .reasoningContent)
+        try c.encodeIfPresent(displayKind, forKey: .displayKind)
+    }
 }
 
 public struct SearchHit: Codable, Identifiable, Hashable, Sendable {
