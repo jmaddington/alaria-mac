@@ -4,6 +4,11 @@ import Foundation
 /// Unit checks for the SSE parser, plus live checks against scripts/dev-hermes.sh when dev/hermes-home/.env exists.
 /// HERMES_CHECK_CHAT=1 also runs one real streamed chat turn (slow on a local model).
 func runAPIChecks() {
+    check("url building: ids encoded once, + & = escaped in queries (hermes-mac-d80, -jcv)") {
+        let base = URL(string: "http://h:1/prefix/")!
+        let u = HTTPCore.url(base: base, path: "/api/sessions/\(HermesClient.path("a b%/c"))/messages", query: ["q": "c++ & x=1", "n": nil])
+        expect(u.absoluteString == "http://h:1/prefix/api/sessions/a%20b%25%2Fc/messages?q=c%2B%2B%20%26%20x%3D1", u.absoluteString)
+    }
     check("sse parser without blank lines (URLSession.lines drops them)") {
         var p = SSEParser()
         var frames: [SSEFrame] = []

@@ -64,13 +64,23 @@ public final class HTTPCore: Sendable {
         session = URLSession(configuration: cfg)
     }
 
+    /// Builds a request URL. `path` is ALREADY percent-encoded (HermesClient.path escapes ids), so it goes into
+    /// percentEncodedPath; assigning it to `path` encoded it twice (hermes-mac-d80). Query values escape `+`, `&`,
+    /// `=` too: the server decodes a literal `+` as a space, so "c++" searched for "c  " (hermes-mac-jcv).
+    public static func url(base: URL, path: String, query: [String: String?] = [:]) -> URL {
+        var comps = URLComponents(url: base, resolvingAgainstBaseURL: false)!
+        let basePath = comps.percentEncodedPath.hasSuffix("/") ? String(comps.percentEncodedPath.dropLast()) : comps.percentEncodedPath
+        comps.percentEncodedPath = basePath + path
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "+&=?#"))
+        let items = query.compactMap { k, v in
+            v.map { URLQueryItem(name: k, value: $0.addingPercentEncoding(withAllowedCharacters: allowed)) }
+        }
+        if !items.isEmpty { comps.percentEncodedQueryItems = items.sorted { $0.name < $1.name } }
+        return comps.url!
+    }
+
     func request(_ method: String, _ path: String, query: [String: String?] = [:], body: Data? = nil) -> URLRequest {
-        var comps = URLComponents(url: endpoint.baseURL, resolvingAgainstBaseURL: false)!
-        let base = comps.path.hasSuffix("/") ? String(comps.path.dropLast()) : comps.path
-        comps.path = base + path
-        let items = query.compactMap { k, v in v.map { URLQueryItem(name: k, value: $0) } }
-        if !items.isEmpty { comps.queryItems = items.sorted { $0.name < $1.name } }
-        var r = URLRequest(url: comps.url!)
+        var r = URLRequest(url: Self.url(base: endpoint.baseURL, path: path, query: query))
         r.httpMethod = method
         endpoint.applyAuth(&r)
         r.setValue("application/json", forHTTPHeaderField: "Accept")
