@@ -58,7 +58,9 @@ public final class HermesClient: Sendable {
     }
 
     public func messages(_ id: String, limit: Int = 500) async throws -> [HermesMessage] {
-        let r: ListEnvelope<HermesMessage> = try await api.get("/api/sessions/\(Self.path(id))/messages", query: ["limit": "\(limit)", "order": "oldest"])
+        let r: ListEnvelope<HermesMessage> = try await api.get("/api/sessions/\(Self.path(id))/messages", query: ["limit": "\(limit)"])
+        // No order=oldest: with the 500-row cap that returned the FIRST 500 of a long chat. The default returns the
+        // latest `limit` rows, still in ascending order (hermes-mac-868).
         return r.data
     }
 
@@ -207,8 +209,19 @@ public final class HermesClient: Sendable {
         return r.job
     }
 
-    public func updateJob(_ id: String, _ d: JobDraft) async throws -> CronJob {
-        let r: JobEnvelope = try await api.json("PATCH", "/api/jobs/\(Self.path(id))", d.body)
+    /// PATCHes only what changed vs `original`. Re-sending `schedule.display` broke one-shot jobs ("once at ..."
+    /// doesn't parse back), and cleared repeat/timezone must go out as JSON null, not be dropped (hermes-mac-rao).
+    public func updateJob(_ id: String, _ d: JobDraft, from original: JobDraft) async throws -> CronJob {
+        var b: [String: Any?] = [:]
+        if d.name != original.name { b["name"] = d.name }
+        if d.schedule != original.schedule { b["schedule"] = d.schedule }
+        if d.prompt != original.prompt { b["prompt"] = d.prompt }
+        if d.deliver != original.deliver { b["deliver"] = d.deliver }
+        if d.skills != original.skills { b["skills"] = d.skills }
+        if d.repeatTimes != original.repeatTimes { b["repeat"] = d.repeatTimes.map { $0 as Any } ?? NSNull() }
+        let tz = (d.timezone?.isEmpty ?? true) ? nil : d.timezone
+        if tz != original.timezone { b["timezone"] = tz.map { $0 as Any } ?? NSNull() }
+        let r: JobEnvelope = try await api.json("PATCH", "/api/jobs/\(Self.path(id))", b)
         return r.job
     }
 

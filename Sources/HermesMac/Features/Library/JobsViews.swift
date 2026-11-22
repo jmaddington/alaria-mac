@@ -204,7 +204,7 @@ struct JobDetail: View {
         saving = true; defer { saving = false }
         do {
             if let j = job {
-                let u = try await c.updateJob(j.id, draft)
+                let u = try await c.updateJob(j.id, draft, from: HermesClient.JobDraft(j))
                 lib.replace(u); draft = .init(u)
                 model.flash("Saved")
             } else {

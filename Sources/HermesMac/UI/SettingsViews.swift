@@ -171,6 +171,11 @@ struct ModelPane: View {
                 Picker("Provider", selection: $provider) {
                     ForEach(providers.filter { $0.authenticated == true || $0.isCurrent == true || !$0.modelIDs.isEmpty }) { Text($0.name ?? $0.slug).tag($0.slug) }
                 }
+                // A new provider never keeps the old provider's model id (hermes-mac-mg9).
+                .onChange(of: provider) { old, new in
+                    guard !old.isEmpty, old != new else { return }
+                    modelID = providers.first { $0.slug == new }?.modelIDs.first ?? ""
+                }
                 let ids = providers.first { $0.slug == provider }?.modelIDs ?? []
                 if ids.isEmpty { TextField("Model", text: $modelID) }
                 else { Picker("Model", selection: $modelID) { ForEach(ids, id: \.self) { Text($0).tag($0) } } }
@@ -184,10 +189,12 @@ struct ModelPane: View {
         .formStyle(.grouped)
         .task {
             guard let c = model.client else { return }
-            info = try? await c.modelInfo()
-            providers = (try? await c.modelOptions()) ?? []
-            provider = providers.first { $0.isCurrent == true }?.slug ?? info?.provider ?? ""
+            do {
+                info = try await c.modelInfo()
+                providers = try await c.modelOptions()
+            } catch { model.flash("Couldn't load models: \(error.localizedDescription)") }
             modelID = info?.model ?? ""
+            provider = providers.first { $0.isCurrent == true }?.slug ?? info?.provider ?? ""
         }
     }
 }
@@ -197,10 +204,20 @@ struct ConfigPane: View {
     @ViewState private var yaml = ""
     @ViewState private var original = ""
     @ViewState private var path: String?
+    /// Editing (and Save) only after a successful load: an empty buffer saved over config.yaml wipes it (hermes-mac-vp6).
+    @ViewState private var loaded = false
+    @ViewState private var loadError: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if model.client?.hasDashboard != true {
                 Text("Connect the dashboard to edit config.yaml.").foregroundStyle(.secondary).padding()
+            } else if let loadError {
+                VStack(spacing: 12) {
+                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load config.yaml", message: loadError)
+                    Button("Try Again") { Task { await load() } }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !loaded {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text(path ?? "config.yaml").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 TextEditor(text: $yaml).font(Font(NSFont.monospacedSystemFont(ofSize: 12, weight: .regular))) // NSTextView ignores .monospaced design
@@ -220,9 +237,15 @@ struct ConfigPane: View {
             }
         }
         .padding(20)
-        .task {
-            guard let c = model.client, c.hasDashboard, let r = try? await c.rawConfig() else { return }
-            yaml = r.yaml; original = r.yaml; path = r.path
-        }
+        .task(id: model.client?.hasDashboard) { await load() }
+    }
+
+    private func load() async {
+        guard let c = model.client, c.hasDashboard else { return }
+        loadError = nil
+        do {
+            let r = try await c.rawConfig()
+            yaml = r.yaml; original = r.yaml; path = r.path; loaded = true
+        } catch { loadError = error.localizedDescription }
     }
 }

@@ -78,12 +78,19 @@ func liveChecks(_ c: HermesClient) async {
         let j = try await c.createJob(d, paused: true)
         expect(j.isPaused)
         d.name = "checks job 2"; d.schedule = "weekdays at 9am"
-        let u = try await c.updateJob(j.id, d)
+        let u = try await c.updateJob(j.id, d, from: HermesClient.JobDraft(j))
         expect(u.name == "checks job 2" && u.schedule?.kind == "cron", "\(String(describing: u.schedule))")
         let r = try await c.resumeJob(j.id); expect(!r.isPaused, "resume")
         let p = try await c.pauseJob(j.id); expect(p.isPaused, "pause")
         _ = try await c.jobRuns(j.id)
         try await c.deleteJob(j.id)
+        // One-shot jobs: renaming must not re-send the lossy "once at ..." display as the schedule (hermes-mac-rao).
+        var o = HermesClient.JobDraft(); o.name = "checks once"; o.schedule = "30m"; o.prompt = "say hi"
+        let oj = try await c.createJob(o, paused: true)
+        var o2 = HermesClient.JobDraft(oj); o2.name = "checks once renamed"
+        let ou = try await c.updateJob(oj.id, o2, from: HermesClient.JobDraft(oj))
+        expect(ou.name == "checks once renamed", "one-shot rename")
+        try await c.deleteJob(oj.id)
         let jobsAfter = try await c.jobs(); expect(!jobsAfter.contains { $0.id == j.id })
     }
     await asyncCheck("live skills read/edit roundtrip") {

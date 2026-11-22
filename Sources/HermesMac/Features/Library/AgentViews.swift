@@ -289,7 +289,8 @@ struct LogDetail: View {
                         }
                         .padding(16)
                     }
-                    .onChange(of: lines.count) { if live { proxy.scrollTo(shown.count - 1, anchor: .bottom) } }
+                    // Key on the content, not the count: at the 400-line window the count never changes (hermes-mac-fet).
+                    .onChange(of: lines) { if live, !shown.isEmpty { proxy.scrollTo(shown.count - 1, anchor: .bottom) } }
                 }
                 .background(Color(nsColor: .textBackgroundColor))
             }
@@ -299,8 +300,17 @@ struct LogDetail: View {
         .toolbar { ToolbarItem { Toggle(isOn: $live) { Label("Follow", systemImage: "arrow.down.to.line") }.help("Follow new lines") } }
         .task(id: model.library.logFile) {
             guard let c = model.client, c.hasDashboard else { return }
+            lines = [] // never show the previous file's lines under the new file's name
+            var failed = false
             while !Task.isCancelled {
-                if live, let l = try? await c.logs(file: model.library.logFile, lines: 400) { lines = l }
+                if live {
+                    do { lines = try await c.logs(file: model.library.logFile, lines: 400); failed = false }
+                    catch {
+                        if Task.isCancelled { return }
+                        if !failed { model.flash("Couldn't read logs: \(error.localizedDescription)") } // once, not every 3 s
+                        failed = true
+                    }
+                }
                 try? await Task.sleep(for: .seconds(3))
             }
         }
