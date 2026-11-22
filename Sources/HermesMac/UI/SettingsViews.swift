@@ -13,6 +13,7 @@ struct SettingsView: View {
             VoicePane().tabItem { Label("Voice", systemImage: "waveform") }.tag("voice")
             ModelPane().tabItem { Label("Model", systemImage: "cpu") }.tag("model")
             ConfigPane().tabItem { Label("Config", systemImage: "doc.text") }.tag("config")
+            BrowserSettingsPane().tabItem { Label("Browser", systemImage: "globe") }.tag("browser")
         }
         .frame(width: 600)
     }

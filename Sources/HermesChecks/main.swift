@@ -51,5 +51,6 @@ runSplitterChecks()
 runSecurityChecks()
 runGoogleTTSChecks()
 runVoiceChecks()
+runMCPChecks()
 
 if failures.isEmpty { print("All checks passed") } else { failures.forEach { print("FAIL", $0) }; exit(1) }
