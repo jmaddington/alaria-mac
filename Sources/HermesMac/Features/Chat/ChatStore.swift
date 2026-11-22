@@ -8,6 +8,7 @@ struct ChatEntry: Identifiable, Equatable {
     let id: String
     var role: Role
     var text: String
+    var attachments: [Attachment] = []
     var thinking: String = ""
     var tools: [ToolActivity] = []
     var approval: ApprovalRequest?
@@ -26,6 +27,8 @@ final class ChatStore {
     var entries: [ChatEntry] = []
     var loadingMessages = false
     var draft = ""
+    /// Composer attachments waiting to be sent (Attachments.swift).
+    let attachments = AttachmentTray()
     var runId: String?
     var isStreaming: Bool { streamTask != nil }
     var searchText = ""
@@ -95,7 +98,8 @@ final class ChatStore {
             let date = m.timestamp.map { Date(timeIntervalSince1970: $0) }
             switch m.role {
             case "user":
-                out.append(ChatEntry(id: "m\(m.id)", role: .user, text: m.content ?? "", date: date))
+                let (text, attachments) = Attachment.fromStored(m)
+                out.append(ChatEntry(id: "m\(m.id)", role: .user, text: text, attachments: attachments, date: date))
             case "assistant":
                 let text = (m.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 var tools: [ToolActivity] = []
@@ -133,14 +137,19 @@ final class ChatStore {
         loadedFor = nil
         entries = []
         draft = ""
+        attachments.clear()
     }
 
     /// Sends a message, creating a session first if needed. `onEvent` lets voice mode tap the stream.
-    func send(_ text: String, onEvent: ((ChatEvent) -> Void)? = nil, onFinish: ((Error?) -> Void)? = nil) {
+    /// Returns false when nothing was sent (empty, busy, or over Hermes' attachment limits - that one flashes why).
+    @discardableResult
+    func send(_ text: String, attachments: [Attachment] = [], onEvent: ((ChatEvent) -> Void)? = nil, onFinish: ((Error?) -> Void)? = nil) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let client, !isStreaming else { return }
+        guard !text.isEmpty || !attachments.isEmpty, let client, !isStreaming else { return false }
+        let parts = Attachment.parts(text: text, attachments)
+        if let problem = ChatContent.problem(with: parts) { app?.flash(problem); return false }
         draft = ""
-        entries.append(ChatEntry(id: UUID().uuidString, role: .user, text: text, date: .now))
+        entries.append(ChatEntry(id: UUID().uuidString, role: .user, text: text, attachments: attachments, date: .now))
         let replyID = UUID().uuidString
         entries.append(ChatEntry(id: replyID, role: .assistant, text: "", streaming: true, date: .now))
 
@@ -157,7 +166,7 @@ final class ChatStore {
                     loadedFor = sid
                     sessions.insert(s, at: 0)
                 }
-                for try await e in client.chatStream(session: sid, message: text) {
+                for try await e in client.chatStream(session: sid, parts: parts) {
                     apply(e, to: replyID)
                     onEvent?(e)
                 }
@@ -175,6 +184,7 @@ final class ChatStore {
                 if !isStreaming { await reload() }
             }
         }
+        return true
     }
 
     private func apply(_ e: ChatEvent, to id: String) {

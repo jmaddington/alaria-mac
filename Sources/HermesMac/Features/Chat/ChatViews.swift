@@ -201,6 +201,7 @@ struct ConversationView: View {
             }
             Composer()
         }
+        .attachmentDropTarget() // files/images dropped on the conversation or composer go to the tray
         .background(Color(nsColor: .textBackgroundColor))
         .navigationTitle(chats.selectedSession?.displayTitle ?? "New Chat")
         .navigationSubtitle(subtitle)
@@ -280,11 +281,16 @@ struct EntryView: View {
         case .user:
             HStack {
                 Spacer(minLength: 80)
-                Text(entry.text)
-                    .textSelection(.enabled)
-                    .lineSpacing(3)
-                    .padding(.horizontal, 15).padding(.vertical, 10)
-                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.accentSoft))
+                VStack(alignment: .trailing, spacing: 8) {
+                    if !entry.attachments.isEmpty { MessageAttachmentsView(attachments: entry.attachments) }
+                    if !entry.text.isEmpty {
+                        Text(entry.text)
+                            .textSelection(.enabled)
+                            .lineSpacing(3)
+                            .padding(.horizontal, 15).padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.accentSoft))
+                    }
+                }
             }
         default:
             VStack(alignment: .leading, spacing: 12) {
@@ -444,7 +450,12 @@ struct Composer: View {
 
     var body: some View {
         @Bindable var chats = model.chats
+        let tray = chats.attachments
+        // AIDEV-NOTE: attachment tray wraps the row (left unindented to keep concurrent Composer edits mergeable).
+        VStack(alignment: .leading, spacing: 8) {
+        if !tray.isEmpty || tray.loading > 0 { AttachmentTrayView().padding(.top, 4) }
         HStack(alignment: .bottom, spacing: 10) {
+            AttachButton().padding(.bottom, 5)
             TextField("Message Hermes", text: $chats.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
@@ -457,7 +468,7 @@ struct Composer: View {
                     Image(systemName: "stop.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical)
                 }
                 .buttonStyle(.plain).help("Stop (⌘.)").accessibilityLabel("Stop responding")
-            } else if chats.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            } else if chats.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && tray.isEmpty {
                 Button { model.voice.start() } label: {
                     Image(systemName: "waveform.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.accent)
                 }
@@ -467,18 +478,26 @@ struct Composer: View {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(Theme.accent)
                 }
                 .buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).help("Send").accessibilityLabel("Send message")
+                .disabled(tray.loading > 0)
             }
         }
-        .padding(.leading, 18).padding(.trailing, 8).padding(.vertical, 7)
+        }
+        .padding(.leading, 10).padding(.trailing, 8).padding(.vertical, 7)
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
         .frame(maxWidth: Theme.readingWidth + 40)
         .padding(.horizontal, 24).padding(.bottom, 18).padding(.top, 6)
         .disabled(model.client == nil)
+        .attachmentPaste(enabled: focused && model.client != nil)
+        .animation(.smooth(duration: 0.2), value: tray.isEmpty)
         .onAppear { focused = true }
         .onChange(of: chats.selection) { focused = true }
     }
 
-    private func send() { model.chats.send(model.chats.draft) }
+    private func send() {
+        let chats = model.chats
+        guard chats.attachments.loading == 0 else { model.flash("Still preparing an attachment…"); return }
+        if chats.send(chats.draft, attachments: chats.attachments.items) { chats.attachments.clear() }
+    }
 }
 
 /// Wrapping row layout for chips.
