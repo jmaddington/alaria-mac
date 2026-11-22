@@ -13,6 +13,19 @@ enum Markdown {
     // AIDEV-NOTE: security; keep the scheme allowlist (security review 2026-11-21).
     static func inline(_ s: String) -> AttributedString {
         var a = (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
+        // Link text can claim one site and point at another (prompt-injected phishing). When the text doesn't
+        // mention the target host, show it: "click here (evil.example)" (hermes-mac-als).
+        var reveal: [(AttributedString.Index, String)] = []
+        for run in a.runs {
+            guard let url = run.link, let host = url.host()?.lowercased() else { continue }
+            let text = String(a[run.range].characters).lowercased()
+            let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            if !text.contains(bareHost) { reveal.append((run.range.upperBound, " (\(bareHost))")) }
+        }
+        for (at, label) in reveal.reversed() {
+            var tag = AttributedString(label); tag.foregroundColor = .secondary
+            a.insert(tag, at: at)
+        }
         for run in a.runs {
             // SwiftUI Text ignores the .code intent, so style inline code explicitly (hermes-mac-da3).
             if run.inlinePresentationIntent?.contains(.code) == true {

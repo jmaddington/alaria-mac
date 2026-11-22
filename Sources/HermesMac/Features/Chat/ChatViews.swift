@@ -287,6 +287,8 @@ struct ToolChips: View {
                     Text(t.name.replacingOccurrences(of: "_", with: " ")).font(.caption.weight(.medium))
                     if let p = t.preview, !p.isEmpty { Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 220) }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(t.name.replacingOccurrences(of: "_", with: " ")), \(t.state == .running ? "running" : t.state == .done ? "done" : "failed")")
                 .padding(.horizontal, 9).padding(.vertical, 5)
                 .background(Capsule().fill(.quaternary.opacity(0.6)))
                 .help(t.preview ?? t.name)
@@ -327,8 +329,9 @@ struct ApprovalCard: View {
 }
 
 struct TypingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(.animation(paused: reduceMotion)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(spacing: 5) {
                 ForEach(0..<3) { i in
@@ -338,6 +341,7 @@ struct TypingIndicator: View {
             }
         }
         .padding(.vertical, 6)
+        .accessibilityLabel("Hermes is typing")
     }
 }
 
@@ -361,17 +365,17 @@ struct Composer: View {
                 Button(action: chats.stop) {
                     Image(systemName: "stop.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical)
                 }
-                .buttonStyle(.plain).help("Stop (⌘.)")
+                .buttonStyle(.plain).help("Stop (⌘.)").accessibilityLabel("Stop responding")
             } else if chats.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button { model.voice.start() } label: {
                     Image(systemName: "waveform.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.accent)
                 }
-                .buttonStyle(.plain).help("Voice mode (⌥⌘V)")
+                .buttonStyle(.plain).help("Voice mode (⌥⌘V)").accessibilityLabel("Start voice mode")
             } else {
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(Theme.accent)
                 }
-                .buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).help("Send")
+                .buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).help("Send").accessibilityLabel("Send message")
             }
         }
         .padding(.leading, 18).padding(.trailing, 8).padding(.vertical, 7)

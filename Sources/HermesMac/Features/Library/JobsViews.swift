@@ -114,6 +114,7 @@ struct JobDetail: View {
                                 HStack(spacing: 3) {
                                     Text(s).font(.caption)
                                     Button { draft.skills.removeAll { $0 == s } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }.buttonStyle(.plain)
+                                        .accessibilityLabel("Remove \(s)")
                                 }
                                 .padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(Theme.accentSoft))
                             }

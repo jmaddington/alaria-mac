@@ -23,16 +23,44 @@ struct ConnectionForm: View {
                 TextField("URL", text: $draft.apiURL, prompt: Text("http://127.0.0.1:8642"))
                 SecureField("API key", text: $draft.apiKey, prompt: Text("API_SERVER_KEY"))
             } header: { Text("API Server") } footer: {
-                Text("Chats, sessions and scheduled jobs. Runs inside `hermes gateway`; the key is API_SERVER_KEY.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Chats, sessions and scheduled jobs. Runs inside `hermes gateway`; the key is API_SERVER_KEY.")
+                    if Self.sendsKeyInClear(draft.apiURL) { Self.cleartextWarning }
+                }
             }
             SwiftUI.Section {
                 TextField("URL", text: $draft.dashboardURL, prompt: Text("http://127.0.0.1:9119"))
                 SecureField("Session token", text: $draft.dashboardToken, prompt: Text("HERMES_DASHBOARD_SESSION_TOKEN"))
             } header: { Text("Dashboard (optional)") } footer: {
-                Text("Unlocks skills editing, search, tools, memory, usage and logs. Start it with `hermes serve` or `hermes dashboard` and set HERMES_DASHBOARD_SESSION_TOKEN.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Unlocks skills editing, search, tools, memory, usage and logs. Start it with `hermes serve` or `hermes dashboard` and set HERMES_DASHBOARD_SESSION_TOKEN.")
+                    if Self.sendsKeyInClear(draft.dashboardURL) { Self.cleartextWarning }
+                }
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Plain http to a host that isn't this Mac, the LAN, or a tailnet sends the key readable on the wire.
+    // AIDEV-NOTE: security (hermes-mac-fkh). ATS stays permissive so http to tailnet/LAN hosts works; this is the guard.
+    static func sendsKeyInClear(_ s: String) -> Bool {
+        guard let u = URL(string: s.trimmingCharacters(in: .whitespaces)), u.scheme?.lowercased() == "http",
+              let host = u.host()?.lowercased() else { return false }
+        if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".ts.net") || host.hasSuffix(".lan") || !host.contains(".") { return false }
+        let p = host.split(separator: ".").compactMap { Int($0) }
+        if p.count == 4 {
+            switch (p[0], p[1]) {
+            case (127, _), (10, _), (192, 168), (169, 254): return false
+            case (172, 16...31): return false
+            case (100, 64...127): return false // Tailscale CGNAT range
+            default: return true
+            }
+        }
+        return true
+    }
+    static var cleartextWarning: some View {
+        Label("This sends your key unencrypted over the internet. Use https, or a Tailscale/LAN address.", systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
     }
 
     @MainActor static func test(_ s: ConnectionSettings) async -> String {

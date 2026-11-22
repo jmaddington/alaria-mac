@@ -24,7 +24,7 @@ struct ToolsList: View {
                                     .help(t.description ?? "")
                             }
                             Spacer()
-                            Toggle("", isOn: Binding(get: { t.enabled ?? false }, set: { v in
+                            Toggle(t.label ?? t.name, isOn: Binding(get: { t.enabled ?? false }, set: { v in
                                 guard let c = model.client else { return }
                                 model.run("Toolset") { try await c.setToolset(t.name, enabled: v); await lib.loadToolsets() }
                             })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
