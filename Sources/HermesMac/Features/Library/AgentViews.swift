@@ -15,8 +15,13 @@ struct ToolsList: View {
                     ForEach(lib.toolsets) { t in
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(t.label ?? t.name).font(.body.weight(.medium))
+                                HStack(spacing: 6) {
+                                    Text(t.label ?? t.name).font(.body.weight(.medium))
+                                    // Unavailable on this host is not the same as switched off (hermes-mac-eqx).
+                                    if t.available == false { Pill(text: "Unavailable") }
+                                }
                                 Text(t.description ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                                    .help(t.description ?? "")
                             }
                             Spacer()
                             Toggle("", isOn: Binding(get: { t.enabled ?? false }, set: { v in
@@ -24,7 +29,7 @@ struct ToolsList: View {
                                 model.run("Toolset") { try await c.setToolset(t.name, enabled: v); await lib.loadToolsets() }
                             })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
                         }
-                        .opacity(t.available == false ? 0.5 : 1)
+                        .opacity(t.available == false ? 0.55 : (t.enabled == false ? 0.8 : 1))
                         .hoverRow().tag(Optional(t.name))
                     }
                 }
@@ -52,7 +57,7 @@ struct ToolDetail: View {
                     if t.configured == false { Label("Needs setup on the Hermes host", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     if t.available == false { Label("Not available on this host", systemImage: "nosign").foregroundStyle(.secondary) }
                 } footer: { Text(t.description ?? "") }
-                SwiftUI.Section("\(t.tools?.count ?? 0) tools") {
+                SwiftUI.Section({ let n = t.tools?.count ?? 0; return "\(n) tool\(n == 1 ? "" : "s")" }()) {
                     ForEach(t.tools ?? [], id: \.self) { name in
                         Label(name, systemImage: "function").font(.system(.body, design: .monospaced))
                     }
@@ -82,10 +87,12 @@ struct MemoryList: View {
                     SwiftUI.Section("Providers") {
                         ForEach(lib.memory?.providers ?? []) { p in
                             HStack {
-                                Text(p.name.capitalized)
+                                Text(Self.providerName(p.name)).help(p.description ?? "")
                                 Spacer()
                                 if lib.memory?.active == p.name { Pill(text: "Active", color: .green) }
-                                else if p.available == false { Pill(text: "Unavailable") }
+                                else if p.available == false {
+                                    Pill(text: "Unavailable").help(p.status ?? "Not installed or not configured on the Hermes host")
+                                }
                             }
                             .hoverRow().tag(Optional(p.name))
                         }
@@ -93,10 +100,18 @@ struct MemoryList: View {
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)
                 .task { await lib.loadMemory() }
+                .onChange(of: lib.memorySelection, initial: true) { if lib.memorySelection == nil { lib.memorySelection = "builtin" } } // detail always matches a selected row
             }
         }
         .navigationTitle("Memory")
     }
+    /// Provider ids are lowercase slugs; known ones get their real names (hermes-mac-jhg).
+    static func providerName(_ id: String) -> String {
+        let known = ["retaindb": "RetainDB", "byterover": "ByteRover", "mem0": "Mem0", "honcho": "Honcho",
+                     "zep": "Zep", "letta": "Letta", "supermemory": "Supermemory"]
+        return known[id.lowercased()] ?? id.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
 }
 
 struct MemoryDetail: View {

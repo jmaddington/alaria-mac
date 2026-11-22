@@ -353,7 +353,8 @@ final class VoiceController {
     private func settle() {
         guard audio != nil else { return }
         let moreComing = app?.chats.isStreaming == true
-        if moreComing { phase = .thinking; startTicking() } else { phase = .listening; tickTask?.cancel() }
+        if moreComing { phase = .thinking; startTicking() }
+        else { phase = .listening; tickTask?.cancel(); heard = "" } // the turn is over: don't leave the old question up (hermes-mac-x1l)
         // Without echo cancellation the mic stays closed between sentences of a reply still streaming, or the speaker
         // tail opens the VAD (hermes-mac-jc6). With AEC it stays open so speaking can steer.
         frames.setListening(!muted && (moreComing ? (audio?.echoCancelling ?? false) : true))
