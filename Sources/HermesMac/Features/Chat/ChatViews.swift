@@ -233,7 +233,7 @@ struct EntryView: View {
                     .disclosureGroupStyle(QuietDisclosure())
                 }
                 if !entry.tools.isEmpty { ToolChips(tools: entry.tools) }
-                if let a = entry.approval { ApprovalCard(request: a) { model.chats.answer(a, $0, entry: entry.id) } }
+                if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
                 if !entry.text.isEmpty { MarkdownView(text: entry.text) }
                 else if entry.streaming && entry.thinking.isEmpty && entry.tools.isEmpty { TypingIndicator() }
                 if let err = entry.error {
@@ -286,6 +286,7 @@ struct ToolChips: View {
 
 struct ApprovalCard: View {
     var request: ApprovalRequest
+    var busy = false
     var choose: (String) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -304,7 +305,9 @@ struct ApprovalCard: View {
                 // AIDEV-NOTE: security; no keyboard shortcut on approval buttons. Return sends in the composer and must
                 // never approve an agent command (security review 2026-11-21).
                 if request.choices.contains("once") { Button("Allow Once") { choose("once") }.buttonStyle(.borderedProminent) }
+                if busy { ProgressView().controlSize(.small) }
             }
+            .disabled(busy) // one answer in flight at a time
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous).fill(.orange.opacity(0.08)))

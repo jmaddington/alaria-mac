@@ -11,6 +11,7 @@ struct ChatEntry: Identifiable, Equatable {
     var thinking: String = ""
     var tools: [ToolActivity] = []
     var approval: ApprovalRequest?
+    var answeringApproval = false
     var streaming = false
     var error: String?
     var date: Date?
@@ -31,6 +32,9 @@ final class ChatStore {
     var searchHits: [SearchHit] = []
 
     private var streamTask: Task<Void, Never>?
+    /// Bumped per send; a stream's cleanup and Stop's delayed cancel only act on their own generation.
+    // AIDEV-NOTE: race guard (hermes-mac-n2b, hermes-mac-u5s); never clear streamTask/runId without checking it.
+    private var streamGen = 0
     private var loadedFor: String?
 
     var client: HermesClient? { app?.client }
@@ -51,19 +55,29 @@ final class ChatStore {
 
     func select(_ id: String?) {
         guard id != loadedFor else { return }
-        if isStreaming, id != selection { cancelStream() }
+        if isStreaming, id != selection {
+            // Hermes interrupts the agent when the stream's client goes away, so leaving a chat stops its reply.
+            // Say so instead of failing silently (hermes-mac-1ll notes).
+            let title = selectedSession?.title ?? "the previous chat"
+            cancelStream()
+            app?.flash("Stopped the reply in \(title)")
+        }
         selection = id
         loadedFor = id
         entries = []
         guard let id, let client else { return }
         loadingMessages = true
         Task {
-            defer { loadingMessages = false }
+            defer { if selection == id { loadingMessages = false } }
             do {
                 let msgs = try await client.messages(id)
                 guard selection == id else { return }
-                entries = Self.entries(from: msgs)
+                // Keep anything sent while history was loading (hermes-mac-7j1): history goes in front of it.
+                let history = Self.entries(from: msgs)
+                let known = Set(history.map(\.id))
+                entries = history + entries.filter { !known.contains($0.id) }
             } catch {
+                guard selection == id else { return }
                 app?.flash("Couldn't load messages: \(error.localizedDescription)")
             }
         }
@@ -119,6 +133,8 @@ final class ChatStore {
         let replyID = UUID().uuidString
         entries.append(ChatEntry(id: replyID, role: .assistant, text: "", streaming: true, date: .now))
 
+        streamGen += 1
+        let gen = streamGen
         streamTask = Task {
             var failure: Error?
             do {
@@ -139,8 +155,7 @@ final class ChatStore {
                 if !Task.isCancelled { failure = error; update(replyID) { $0.error = error.localizedDescription } }
             }
             update(replyID) { $0.streaming = false }
-            streamTask = nil
-            runId = nil
+            if gen == streamGen { streamTask = nil; runId = nil } // a newer send may own these now
             onFinish?(failure)
             await reload() // titles are generated server-side after the first turn
         }
@@ -148,7 +163,7 @@ final class ChatStore {
 
     private func apply(_ e: ChatEvent, to id: String) {
         switch e {
-        case .started(let r, _): runId = r
+        case .started(let r, _): if streamTask != nil { runId = r }
         case .delta(let d): update(id) { $0.text += d }
         case .thinking(let t): update(id) { $0.thinking += t }
         case .commentary(let t): update(id) { $0.text += ($0.text.isEmpty ? "" : "\n\n") + t }
@@ -171,8 +186,9 @@ final class ChatStore {
     func stop() {
         guard let client else { return }
         if let r = runId { app?.run("Stop") { try await client.stopRun(r) } }
-        // Give the server a moment to emit run.cancelled; then drop the stream regardless.
-        Task { try? await Task.sleep(for: .seconds(2)); cancelStream() }
+        // Give the server a moment to emit run.cancelled; then drop THIS stream regardless (not a newer one).
+        let gen = streamGen
+        Task { try? await Task.sleep(for: .seconds(2)); if gen == streamGen { cancelStream() } }
     }
 
     func cancelStream() {
@@ -181,10 +197,20 @@ final class ChatStore {
         runId = nil
     }
 
+    /// The card stays up (buttons disabled) until Hermes accepts the answer; on failure it comes back so the
+    /// run is never left blocked with no way to answer (hermes-mac-1ll).
     func answer(_ a: ApprovalRequest, _ choice: String, entry: String) {
         guard let client else { return }
-        update(entry) { $0.approval = nil }
-        app?.run("Approval") { try await client.answerApproval(a, choice: choice) }
+        update(entry) { $0.answeringApproval = true }
+        Task {
+            do {
+                try await client.answerApproval(a, choice: choice)
+                update(entry) { if $0.approval == a { $0.approval = nil }; $0.answeringApproval = false }
+            } catch {
+                update(entry) { $0.answeringApproval = false }
+                app?.flash("Approval wasn't sent: \(error.localizedDescription). Try again.")
+            }
+        }
     }
 
     // MARK: session management
