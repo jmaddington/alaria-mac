@@ -48,6 +48,10 @@ public final class VoiceAudio: @unchecked Sendable {
     public init() {}
 
     public func start(voiceProcessing: Bool) throws {
+        // AIDEV-NOTE: build the output graph BEFORE enabling voice processing. Enabling VP first makes the
+        // output AU fail kAUInitialize (-10875) on MacBook Pro mic arrays (verified 2026-11-22, macOS 27.2).
+        _ = engine.mainMixerNode
+        _ = engine.outputNode
         let input = engine.inputNode
         if voiceProcessing {
             do {
@@ -97,8 +101,8 @@ public final class VoiceAudio: @unchecked Sendable {
     }
 
     private func ingest(_ buffer: AVAudioPCMBuffer) {
-        lock.lock(); let conv = converter; lock.unlock()
-        guard let conv else { return }
+        lock.lock(); let conv = converter, muted = injecting; lock.unlock()
+        guard let conv, !muted else { return }
         let cap = AVAudioFrameCount(Double(buffer.frameLength) * 16_000 / buffer.format.sampleRate) + 64
         guard let out = AVAudioPCMBuffer(pcmFormat: speechFormat, frameCapacity: cap) else { return }
         var fed = false
@@ -119,6 +123,49 @@ public final class VoiceAudio: @unchecked Sendable {
         }
         lock.unlock()
         for (r, f) in frames { onFrame?(r, f) }
+    }
+
+    // MARK: test seam
+
+    private var injecting = false // guarded by lock
+
+    /// Test harness: replaces the microphone with `buffer` (any format), paced in real time and run through the
+    /// exact same 16 kHz + band-pass RMS path, then `tailSeconds` of near-silence so the VAD can close the utterance.
+    // AIDEV-NOTE: only reachable when the app is launched with HERMES_VOICE_TEST=1 (see VoiceTestHarness).
+    public func inject(_ buffer: AVAudioPCMBuffer, leadSeconds: Double = 0.8, tailSeconds: Double = 2.0) async {
+        guard let speech = Self.toSpeech(buffer) else { audioLog.error("inject: unsupported format [VOX-INJECT-FMT]"); return }
+        func quiet(_ secs: Double) -> [Float] { (0..<Int(secs * 16_000)).map { _ in Float.random(in: -0.0002...0.0002) } }
+        let samples = quiet(leadSeconds) + speech + quiet(tailSeconds)
+        lock.withLock { injecting = true; pending.removeAll() }
+        defer { lock.withLock { injecting = false } }
+        var i = 0
+        let clock = ContinuousClock(); var next = clock.now
+        while i + 320 <= samples.count, !Task.isCancelled {
+            let f = Array(samples[i..<i + 320]); i += 320
+            let r: Double = lock.withLock {
+                var sum = 0.0
+                for s in f { let y = lp.process(hp.process(Double(s))); sum += y * y }
+                return sqrt(sum / 320)
+            }
+            onFrame?(r, f)
+            next += .milliseconds(20)
+            try? await clock.sleep(until: next)
+        }
+    }
+
+    /// Any PCM buffer -> 16 kHz mono Float32 samples.
+    static func toSpeech(_ buffer: AVAudioPCMBuffer) -> [Float]? {
+        guard let conv = AVAudioConverter(from: buffer.format, to: speechFormat) else { return nil }
+        if buffer.format.channelCount > 1 { conv.downmix = true }
+        let cap = AVAudioFrameCount(Double(buffer.frameLength) * 16_000 / buffer.format.sampleRate) + 1024
+        guard let out = AVAudioPCMBuffer(pcmFormat: speechFormat, frameCapacity: cap) else { return nil }
+        var fed = false, err: NSError?
+        conv.convert(to: out, error: &err) { _, status in
+            if fed { status.pointee = .endOfStream; return nil }
+            fed = true; status.pointee = .haveData; return buffer
+        }
+        guard err == nil, let ch = out.floatChannelData?[0] else { return nil }
+        return Array(UnsafeBufferPointer(start: ch, count: Int(out.frameLength)))
     }
 
     // MARK: playback
