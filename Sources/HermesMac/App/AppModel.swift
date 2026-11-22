@@ -199,7 +199,23 @@ final class AppModel {
     /// Runs an action and surfaces failures as a toast instead of swallowing them.
     func run(_ what: String, _ body: @escaping () async throws -> Void) {
         Task {
-            do { try await body() } catch { flash("\(what): \(error.localizedDescription)") }
+            do { try await body() } catch { report(what, error) }
         }
+    }
+
+    /// Flashes a failure unless it's just a cancelled request (re-selection cancels .task loads) (hermes-mac-r6c).
+    func report(_ what: String, _ error: Error) {
+        guard !error.isCancellation else { return }
+        flash("\(what): \(error.localizedDescription)")
+    }
+}
+
+
+extension Error {
+    /// Task cancellation or a URLSession request cancelled underneath it.
+    var isCancellation: Bool {
+        if self is CancellationError { return true }
+        let ns = self as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
     }
 }

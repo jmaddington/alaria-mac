@@ -56,7 +56,10 @@ final class LibraryStore {
         jobsLoading = true; defer { jobsLoading = false }
         do {
             jobs = try await client.jobs().sorted { ($0.name ?? "") < ($1.name ?? "") }
-            if client.hasDashboard, deliveryTargets.isEmpty { deliveryTargets = (try? await client.deliveryTargets()) ?? [] }
+            if client.hasDashboard, deliveryTargets.isEmpty {
+                do { deliveryTargets = try await client.deliveryTargets() }
+                catch { app?.report("Couldn't load delivery targets", error) } // picker would silently show Local only
+            }
         } catch { app?.flash("Couldn't load jobs: \(error.localizedDescription)") }
     }
 

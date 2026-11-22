@@ -36,6 +36,8 @@ final class ChatStore {
     // AIDEV-NOTE: race guard (hermes-mac-n2b, hermes-mac-u5s); never clear streamTask/runId without checking it.
     private var streamGen = 0
     private var loadedFor: String?
+    /// Set when a chat's history failed to load; the conversation shows it with Try Again (hermes-mac-nze).
+    var messagesError: String?
 
     var client: HermesClient? { app?.client }
     var selectedSession: HermesSession? { sessions.first { $0.id == selection } }
@@ -65,6 +67,7 @@ final class ChatStore {
         selection = id
         loadedFor = id
         entries = []
+        messagesError = nil
         guard let id, let client else { return }
         loadingMessages = true
         Task {
@@ -77,8 +80,9 @@ final class ChatStore {
                 let known = Set(history.map(\.id))
                 entries = history + entries.filter { !known.contains($0.id) }
             } catch {
-                guard selection == id else { return }
-                app?.flash("Couldn't load messages: \(error.localizedDescription)")
+                guard selection == id, !error.isCancellation else { return }
+                loadedFor = nil // so selecting it again retries
+                messagesError = error.localizedDescription
             }
         }
     }
@@ -116,7 +120,14 @@ final class ChatStore {
         return out
     }
 
+    func retryMessages() {
+        let id = selection
+        loadedFor = nil
+        select(id)
+    }
+
     func newChat() {
+        messagesError = nil
         cancelStream()
         selection = nil
         loadedFor = nil
@@ -255,7 +266,8 @@ final class ChatStore {
     func runSearch() async {
         let q = searchText.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty, let client, client.hasDashboard else { searchHits = []; return }
-        do { searchHits = try await client.search(q) } catch { searchHits = [] }
+        do { searchHits = try await client.search(q) }
+        catch { searchHits = []; app?.report("Search failed", error) } // not "no matches" (hermes-mac-z8z)
     }
 
     /// Hermes reports run failures as bare codes ("permission_denied"); turn known ones into a sentence,

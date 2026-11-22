@@ -121,11 +121,17 @@ struct SessionRow: View {
 
 struct ConversationView: View {
     @Environment(AppModel.self) private var model
+    @ViewState private var followTail = true
     private var chats: ChatStore { model.chats }
 
     var body: some View {
         VStack(spacing: 0) {
-            if chats.entries.isEmpty && !chats.loadingMessages {
+            if let err = chats.messagesError, chats.entries.isEmpty {
+                VStack(spacing: 12) {
+                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load this chat", message: err)
+                    Button("Try Again") { chats.retryMessages() }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if chats.entries.isEmpty && !chats.loadingMessages {
                 Greeting()
             } else {
                 ScrollViewReader { proxy in
@@ -139,8 +145,13 @@ struct ConversationView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .scrollContentBackground(.hidden)
-                    .onChange(of: chats.entries.last?.text) { proxy.scrollTo("bottom", anchor: .bottom) }
-                    .onChange(of: chats.entries.count) { withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    // Follow streaming text only while the reader is at the bottom; scrolling up to read
+                    // earlier text must not be yanked back on every delta (hermes-mac-kiu).
+                    .onScrollGeometryChange(for: Bool.self) { g in
+                        g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
+                    } action: { _, atBottom in followTail = atBottom }
+                    .onChange(of: chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    .onChange(of: chats.entries.count) { followTail = true; withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) } }
                     .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
@@ -152,7 +163,7 @@ struct ConversationView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { model.voice.start() } label: { Label("Voice", systemImage: "waveform") }
-                    .help("Voice mode (⇧⌘V)")
+                    .help("Voice mode (⌥⌘V)")
             }
         }
     }
@@ -355,7 +366,7 @@ struct Composer: View {
                 Button { model.voice.start() } label: {
                     Image(systemName: "waveform.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.accent)
                 }
-                .buttonStyle(.plain).help("Voice mode (⇧⌘V)")
+                .buttonStyle(.plain).help("Voice mode (⌥⌘V)")
             } else {
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(Theme.accent)

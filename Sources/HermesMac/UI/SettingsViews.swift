@@ -193,7 +193,7 @@ struct ModelPane: View {
             do {
                 info = try await c.modelInfo()
                 providers = try await c.modelOptions()
-            } catch { model.flash("Couldn't load models: \(error.localizedDescription)") }
+            } catch { model.report("Couldn't load models", error) }
             modelID = info?.model ?? ""
             provider = providers.first { $0.isCurrent == true }?.slug ?? info?.provider ?? ""
         }

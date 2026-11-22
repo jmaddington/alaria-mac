@@ -202,7 +202,7 @@ struct JobDetail: View {
 
     private func loadRuns() async {
         guard let j = job, let c = model.client, c.hasDashboard else { return }
-        runs = (try? await c.jobRuns(j.id)) ?? []
+        do { runs = try await c.jobRuns(j.id) } catch { model.report("Couldn't load run history", error) }
     }
 
     private func act(_ what: String, _ f: @escaping (HermesClient) async throws -> CronJob) {

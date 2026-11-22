@@ -171,6 +171,7 @@ struct UsagePeriods: View {
 struct UsageDetail: View {
     @Environment(AppModel.self) private var model
     @ViewState private var report: UsageReport?
+    @ViewState private var usageError: String?
     private var periodStart: Date {
         Calendar.current.startOfDay(for: .now.addingTimeInterval(-Double(model.library.usageDays - 1) * 86_400))
     }
@@ -222,12 +223,17 @@ struct UsageDetail: View {
                     .padding(32)
                     .frame(maxWidth: 900, alignment: .leading)
                 }
+            } else if let usageError {
+                EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load usage", message: usageError)
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .navigationTitle("Usage")
         .task(id: model.library.usageDays) {
             guard let c = model.client, c.hasDashboard else { return }
-            do { report = try await c.usage(days: model.library.usageDays) } catch { model.flash("Couldn't load usage: \(error.localizedDescription)") }
+            report = nil // never label 30 days over 7-day numbers while loading (hermes-mac-3r6)
+            usageError = nil
+            do { report = try await c.usage(days: model.library.usageDays) }
+            catch { if !error.isCancellation { usageError = error.localizedDescription } }
         }
     }
 }
