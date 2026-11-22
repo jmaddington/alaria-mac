@@ -108,7 +108,10 @@ struct SkillDetail: View {
                     } else if preview {
                         ScrollView { MarkdownView(text: stripFrontMatter(content)).frame(maxWidth: Theme.readingWidth).padding(32).frame(maxWidth: .infinity) }
                     } else {
-                        TextEditor(text: $content)
+                        TextEditor(text: Binding(get: { content }, set: { v in
+                            content = v
+                            model.library.skillDrafts[skill.name] = v == original ? nil : v
+                        }))
                             .font(Font(NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)))
                             .scrollContentBackground(.hidden)
                             .padding(.horizontal, 20).padding(.vertical, 14)
@@ -132,7 +135,7 @@ struct SkillDetail: View {
                     }.pickerStyle(.segmented)
                 }
                 ToolbarItem {
-                    Button("Revert") { content = original }.disabled(!dirty)
+                    Button("Revert") { content = original; if let n = skill?.name { model.library.skillDrafts[n] = nil } }.disabled(!dirty)
                 }
                 ToolbarItem {
                     Button { Task { await save() } } label: { Text(saving ? "Saving…" : "Save") }
@@ -183,7 +186,8 @@ struct SkillDetail: View {
         do {
             let c = try await client.skillContent(name)
             guard model.library.skillSelection == name, !Task.isCancelled else { return } // superseded by a newer selection
-            content = c.content; original = c.content; path = c.path; loadedName = name
+            original = c.content; path = c.path; loadedName = name
+            content = model.library.skillDrafts[name] ?? c.content // resume unsaved edits
         } catch is CancellationError {
             return
         } catch {
@@ -199,6 +203,7 @@ struct SkillDetail: View {
         do {
             try await client.saveSkill(s.name, content: content)
             original = content
+            model.library.skillDrafts[s.name] = nil
             model.flash("Saved \(s.name)")
             await model.library.loadSkills()
         } catch { model.flash("Save failed: \(error.localizedDescription)") }

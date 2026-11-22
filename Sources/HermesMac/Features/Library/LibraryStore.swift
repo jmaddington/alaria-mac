@@ -13,6 +13,10 @@ final class LibraryStore {
     var skillSelection: String?
     var skillsLoading = false
     var skillFilter = ""
+    /// Unsaved editor text per skill / job (key "new" = the New Job form). Lives here, not in the views, so
+    /// switching skill, job or section never throws edits away (hermes-mac-fz5). Cleared on Save/Revert.
+    var skillDrafts: [String: String] = [:]
+    var jobDrafts: [String: HermesClient.JobDraft] = [:]
 
     // Jobs
     var jobs: [CronJob] = []

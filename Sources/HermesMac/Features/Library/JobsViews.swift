@@ -75,7 +75,8 @@ struct JobDetail: View {
         }
         .navigationTitle(isNew ? "New Job" : job?.name ?? "Scheduled")
         .onChange(of: job?.id, initial: true) { reset() }
-        .onChange(of: lib.creatingJob) { if lib.creatingJob { draft = .init(); loadedID = nil } }
+        .onChange(of: lib.creatingJob) { if lib.creatingJob { draft = lib.jobDrafts["new"] ?? .init(); loadedID = nil } }
+        .onChange(of: draft) { stash() }
         .confirmationDialog("Delete \(job?.name ?? "this job")?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) {
                 guard let j = job, let c = model.client else { return }
@@ -165,6 +166,9 @@ struct JobDetail: View {
                 ToolbarItem { Button(role: .destructive) { confirmDelete = true } label: { Label("Delete", systemImage: "trash") }.help("Delete") }
             }
             ToolbarItem {
+                Button("Revert") { draft = job.map { HermesClient.JobDraft($0) } ?? .init() }.disabled(!dirty)
+            }
+            ToolbarItem {
                 Button(isNew ? "Create" : "Save") { Task { await save() } }
                     .buttonStyle(.borderedProminent).keyboardShortcut("s")
                     .disabled(!dirty || saving || draft.name.isEmpty || draft.schedule.isEmpty)
@@ -186,7 +190,14 @@ struct JobDetail: View {
 
     private func reset() {
         guard let j = job else { return }
-        if loadedID != j.id { draft = .init(j); loadedID = j.id; runs = [] }
+        if loadedID != j.id { draft = lib.jobDrafts[j.id] ?? .init(j); loadedID = j.id; runs = [] }
+    }
+
+    /// Keep unsaved form edits per job across navigation (hermes-mac-fz5).
+    private func stash() {
+        let key = isNew ? "new" : loadedID
+        guard let key else { return }
+        lib.jobDrafts[key] = dirty ? draft : nil
     }
 
     private func loadRuns() async {
@@ -205,11 +216,12 @@ struct JobDetail: View {
         do {
             if let j = job {
                 let u = try await c.updateJob(j.id, draft, from: HermesClient.JobDraft(j))
-                lib.replace(u); draft = .init(u)
+                lib.replace(u); lib.jobDrafts[j.id] = nil; draft = .init(u)
                 model.flash("Saved")
             } else {
                 let n = try await c.createJob(draft)
                 lib.replace(n)
+                lib.jobDrafts["new"] = nil
                 lib.creatingJob = false
                 lib.jobSelection = n.id
             }
