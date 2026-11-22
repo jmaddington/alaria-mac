@@ -26,6 +26,8 @@ final class LibraryStore {
         skills = []; skillSelection = nil; skillDrafts = [:]
         jobs = []; jobSelection = nil; creatingJob = false; jobDrafts = [:]
         toolsets = []; toolSelection = nil; memory = nil
+        deliveryTargets = [] // per server and per profile; loadJobs only fetches them when empty
+        configDraft = nil
     }
 
     // Jobs
