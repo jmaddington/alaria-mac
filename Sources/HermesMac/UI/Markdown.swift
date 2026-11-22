@@ -14,6 +14,12 @@ enum Markdown {
     static func inline(_ s: String) -> AttributedString {
         var a = (try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(s)
         for run in a.runs {
+            // SwiftUI Text ignores the .code intent, so style inline code explicitly (hermes-mac-da3).
+            if run.inlinePresentationIntent?.contains(.code) == true {
+                a[run.range].font = .system(.body, design: .monospaced).weight(.regular)
+                a[run.range].backgroundColor = Color.primary.opacity(0.07)
+                a[run.range].foregroundColor = Color.primary.opacity(0.85)
+            }
             guard let url = run.link else { continue }
             if !["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") { a[run.range].link = nil }
         }

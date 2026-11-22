@@ -99,8 +99,8 @@ struct JobDetail: View {
                 }
             }
             SwiftUI.Section("Prompt") {
-                TextEditor(text: $draft.prompt)
-                    .font(.body).frame(minHeight: 140)
+                TextEditor(text: $draft.prompt) // capped so a long prompt scrolls inside instead of growing the form
+                    .font(.body).frame(minHeight: 140, maxHeight: 320)
                     .scrollContentBackground(.hidden)
             }
             SwiftUI.Section("Options") {
@@ -133,7 +133,7 @@ struct JobDetail: View {
                 SwiftUI.Section("Status") {
                     LabeledContent("State") { Text(j.isPaused ? "Paused" : "Scheduled").foregroundStyle(j.isPaused ? .secondary : .primary) }
                     if let r = j.pausedReason, j.isPaused { LabeledContent("Reason") { Text(r).foregroundStyle(.secondary) } }
-                    LabeledContent("Next run") { Text(date(j.nextRunAt)) }
+                    LabeledContent("Next run") { Text(j.isPaused ? "Paused" : date(j.nextRunAt)) }
                     LabeledContent("Last run") { Text(date(j.lastRunAt)) }
                     if let s = j.lastStatus { LabeledContent("Last result") { Text(s.capitalized).foregroundStyle(s == "ok" || s == "success" ? .green : .orange) } }
                     if let e = j.lastError { Text(e).font(.callout).foregroundStyle(.red).textSelection(.enabled) }

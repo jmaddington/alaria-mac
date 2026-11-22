@@ -237,8 +237,11 @@ struct Stat: View {
     var value: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Never wrap mid-number at narrow widths; shrink instead (hermes-mac-bax).
             Text(title).font(.caption).foregroundStyle(.secondary).textCase(.uppercase).tracking(0.4)
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(value).font(.system(size: 26, weight: .semibold, design: .rounded)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.5)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

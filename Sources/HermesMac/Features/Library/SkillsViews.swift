@@ -116,6 +116,9 @@ struct SkillDetail: View {
                             .scrollContentBackground(.hidden)
                             .padding(.horizontal, 20).padding(.vertical, 14)
                             .disabled(skill.locked == true)
+                            // NSTextView-backed editors report the full text height as ideal; cap it so a long SKILL.md
+                            // can't push the whole window layout up under the title bar (hermes-mac-x0h).
+                            .frame(minHeight: 0, maxHeight: .infinity)
                     }
                 }
                 .background(Color(nsColor: .textBackgroundColor))

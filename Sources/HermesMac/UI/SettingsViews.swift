@@ -125,7 +125,8 @@ struct VoicePane: View {
                 }
             }
             SwiftUI.Section {
-                SecureField("OpenAI API key", text: $key).onChange(of: key) { Keychain.set("openaiKey", key) }
+                SecureField("OpenAI API key", text: $key, prompt: Text(key.isEmpty ? "sk-…" : "Saved in Keychain")) // hermes-mac-ich
+                    .onChange(of: key) { Keychain.set("openaiKey", key) }
             } footer: {
                 Text("Only needed for OpenAI transcription or voices; stored in your Keychain. On-device options keep audio on this Mac.\nLocal server: any OpenAI-compatible /v1/audio/speech, such as Kokoro via scripts/dev-tts.sh.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
             }
