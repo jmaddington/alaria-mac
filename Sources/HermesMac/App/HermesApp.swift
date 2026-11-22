@@ -11,6 +11,7 @@ struct HermesApp: App {
             RootView()
                 .environment(model)
                 .frame(minWidth: 940, minHeight: 600)
+                .tint(Theme.accent)
         }
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1240, height: 800)
@@ -38,7 +39,7 @@ struct HermesApp: App {
         }
 
         Settings {
-            SettingsView().environment(model)
+            SettingsView().environment(model).tint(Theme.accent)
         }
     }
 }

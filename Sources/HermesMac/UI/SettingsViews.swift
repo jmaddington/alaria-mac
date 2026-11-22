@@ -270,10 +270,7 @@ struct ConfigPane: View {
             if model.client?.hasDashboard != true {
                 Text("Connect the dashboard to edit config.yaml.").foregroundStyle(.secondary).padding()
             } else if let loadError {
-                VStack(spacing: 12) {
-                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load config.yaml", message: loadError)
-                    Button("Try Again") { Task { await load() } }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load config.yaml", message: loadError, action: ("Try Again", { Task { await load() } })).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !loaded {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {

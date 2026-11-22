@@ -126,10 +126,7 @@ struct SkillDetail: View {
                     Divider()
                     if loading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
                     else if let loadError {
-                        VStack(spacing: 12) {
-                            EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't open \(skill.name)", message: loadError)
-                            Button("Try Again") { Task { await load(skill.name) } }
-                        }
+                        EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't open \(skill.name)", message: loadError, action: ("Try Again", { Task { await load(skill.name) } }))
                     } else if loadedName != skill.name {
                         Color.clear
                     } else if preview {

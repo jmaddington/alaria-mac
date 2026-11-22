@@ -350,11 +350,8 @@ struct LogDetail: View {
                 .background(Color(nsColor: .textBackgroundColor))
                 .overlay {
                     if !filter.isEmpty && shown.isEmpty && !lines.isEmpty {
-                        VStack(spacing: 10) {
-                            EmptyState(symbol: "line.3.horizontal.decrease", title: "No matching lines",
-                                       message: "Nothing in the last \(lines.count) lines matches “\(filter)”.")
-                            Button("Clear Filter") { filter = "" }
-                        }
+                        EmptyState(symbol: "line.3.horizontal.decrease", title: "No matching lines",
+                                       message: "Nothing in the last \(lines.count) lines matches “\(filter)”.", action: ("Clear Filter", { filter = "" }))
                     }
                 }
             }

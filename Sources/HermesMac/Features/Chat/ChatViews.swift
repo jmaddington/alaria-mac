@@ -165,10 +165,7 @@ struct ConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let err = chats.messagesError, chats.entries.isEmpty {
-                VStack(spacing: 12) {
-                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load this chat", message: err)
-                    Button("Try Again") { chats.retryMessages() }
-                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load this chat", message: err, action: ("Try Again", { chats.retryMessages() })).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if chats.entries.isEmpty && !chats.loadingMessages {
                 Greeting()
             } else {
