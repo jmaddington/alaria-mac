@@ -45,6 +45,7 @@ check("sentence splitter") {
 
 runAPIChecks()
 runAttachmentChecks()
+runProfileChecks()
 runMarkdownChecks()
 runSplitterChecks()
 runSecurityChecks()

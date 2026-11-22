@@ -124,11 +124,13 @@ final class AppModel {
     let chats = ChatStore()
     let voice = VoiceController()
     let library = LibraryStore()
+    let profiles = ProfileStore()
 
     init() {
         chats.app = self
         voice.app = self
         library.app = self
+        profiles.app = self
         if settings.isConfigured { connect() } else { showOnboarding = true }
         installVoiceTestHarness()
     }
@@ -161,7 +163,7 @@ final class AppModel {
     /// starts a monitor: every 15 s a dropped server turns the badge red and a failed one is retried (hermes-mac-1b9).
     func connect() {
         connectTask?.cancel()
-        client = settings.makeClient()
+        client = settings.makeClient().map(profiles.scope) // the remembered Hermes profile (Features/Profiles)
         guard let client else { connection = .unconfigured; return }
         connection = .connecting
         connectTask = Task {
@@ -169,6 +171,7 @@ final class AppModel {
                 let h = try await client.health()
                 guard !Task.isCancelled else { return }
                 connection = .connected(version: h.version == "unknown" ? nil : h.version)
+                await profiles.load() // may fall back to the gateway's own profile and re-scope `client`
                 await chats.reload()
                 await library.loadJobs()
                 await library.loadSkills()
@@ -205,6 +208,24 @@ final class AppModel {
             case .memory: await library.loadMemory()
             case .usage, .logs: break // these panes poll / reload on their own
             }
+        }
+    }
+
+    /// Re-derives `client` for the current profile (ProfileStore changed the selection).
+    func rescopeClient() { client = settings.makeClient().map(profiles.scope) }
+
+    /// The user switched Hermes profile: everything on screen belonged to the old one (sessions, skills, jobs,
+    /// memory live in each profile's own home), so drop it and load the new profile's.
+    func profileChanged() {
+        chats.newChat()
+        chats.sessions = []
+        chats.archived = []
+        library.reset()
+        rescopeClient()
+        Task {
+            await chats.reload()
+            await library.loadJobs()
+            await library.loadSkills()
         }
     }
 

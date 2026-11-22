@@ -289,6 +289,8 @@ public struct DashboardStatus: Codable, Hashable, Sendable {
     public var releaseDate: String?
     public var gatewayRunning: Bool?
     public var gatewayState: String?
+    /// Profiles this gateway also serves at /p/<name>/ (multiplexing). [] = only its own; nil = server predates it.
+    public var gatewaySharedWith: [String]?
 }
 
 public struct LogLines: Codable, Sendable { public var file: String?; public var lines: [String] }

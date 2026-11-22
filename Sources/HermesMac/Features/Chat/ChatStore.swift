@@ -254,9 +254,11 @@ final class ChatStore {
     // AIDEV-NOTE: GET /api/sessions can't include archived chats (no include_archived), so the app remembers what it
     // archived to offer an Archived section + Unarchive (hermes-mac-d2w). Chats archived elsewhere stay invisible.
     var archived: [HermesSession] = []
+    // Per profile: another profile's ids 404 here, and loadArchived would forget them as "gone".
+    private var archivedKey: String { "chats.archivedIDs" + (client?.profile.map { ".\($0)" } ?? "") }
     private var archivedIDs: [String] {
-        get { UserDefaults.standard.stringArray(forKey: "chats.archivedIDs") ?? [] }
-        set { UserDefaults.standard.set(newValue, forKey: "chats.archivedIDs") }
+        get { UserDefaults.standard.stringArray(forKey: archivedKey) ?? [] }
+        set { UserDefaults.standard.set(newValue, forKey: archivedKey) }
     }
     /// Set to a session id to have the list scroll to it (new or duplicated chats can sort off-screen).
     var scrollTarget: String?

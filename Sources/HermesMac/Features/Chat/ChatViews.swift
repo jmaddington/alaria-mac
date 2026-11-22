@@ -214,8 +214,10 @@ struct ConversationView: View {
     }
 
     private var subtitle: String {
-        guard let s = chats.selectedSession else { return "" }
-        return [s.model, s.messageCount.map { "\($0) messages" }].compactMap { $0 }.joined(separator: " · ")
+        let ps = model.profiles
+        let profile = ps.isMulti ? ps.label(ps.current) : nil // chats live in one profile; say which
+        guard let s = chats.selectedSession else { return profile ?? "" }
+        return [profile, s.model, s.messageCount.map { "\($0) messages" }].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -284,7 +286,7 @@ struct EntryView: View {
                 VStack(alignment: .trailing, spacing: 8) {
                     if !entry.attachments.isEmpty { MessageAttachmentsView(attachments: entry.attachments) }
                     if !entry.text.isEmpty {
-                        Text(entry.text)
+                        Text(MentionStyle.attributed(entry.text, model.profiles))
                             .textSelection(.enabled)
                             .lineSpacing(3)
                             .padding(.horizontal, 15).padding(.vertical, 10)
@@ -489,6 +491,7 @@ struct Composer: View {
         .disabled(model.client == nil)
         .attachmentPaste(enabled: focused && model.client != nil)
         .animation(.smooth(duration: 0.2), value: tray.isEmpty)
+        .profileMentions(focused: focused) // @profile autocomplete + routing hint (Features/Profiles)
         .onAppear { focused = true }
         .onChange(of: chats.selection) { focused = true }
     }
@@ -496,7 +499,7 @@ struct Composer: View {
     private func send() {
         let chats = model.chats
         guard chats.attachments.loading == 0 else { model.flash("Still preparing an attachment…"); return }
-        if chats.send(chats.draft, attachments: chats.attachments.items) { chats.attachments.clear() }
+        chats.sendRouted(chats.draft, attachments: chats.attachments.items) // @profile routing + attachments
     }
 }
 

@@ -4,12 +4,15 @@ import HermesKit
 import SwiftUI
 
 struct SettingsView: View {
+    /// Selected tab; the sidebar profile switcher's "Manage Profiles…" sets it to "profiles".
+    @AppStorage("settings.tab") private var tab = "connection"
     var body: some View {
-        TabView {
-            ConnectionPane().tabItem { Label("Connection", systemImage: "network") }
-            VoicePane().tabItem { Label("Voice", systemImage: "waveform") }
-            ModelPane().tabItem { Label("Model", systemImage: "cpu") }
-            ConfigPane().tabItem { Label("Config", systemImage: "doc.text") }
+        TabView(selection: $tab) {
+            ConnectionPane().tabItem { Label("Connection", systemImage: "network") }.tag("connection")
+            ProfilesPane().tabItem { Label("Profiles", systemImage: "person.2") }.tag("profiles")
+            VoicePane().tabItem { Label("Voice", systemImage: "waveform") }.tag("voice")
+            ModelPane().tabItem { Label("Model", systemImage: "cpu") }.tag("model")
+            ConfigPane().tabItem { Label("Config", systemImage: "doc.text") }.tag("config")
         }
         .frame(width: 600)
     }
