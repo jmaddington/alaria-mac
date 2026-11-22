@@ -13,7 +13,7 @@ public enum MessageText {
             guard preambles.contains(where: { trimmed.hasPrefix($0) }) else { return String(trimmed) }
             // The block ends at the first "]" that closes a line; fall back to the first "]".
             if let close = trimmed.range(of: "]\n") ?? trimmed.range(of: "]") { s = trimmed[close.upperBound...] }
-            else { return String(trimmed) }
+            else { return "" } // truncated (e.g. a list preview cut mid-preamble): nothing the user wrote is visible
         }
     }
 

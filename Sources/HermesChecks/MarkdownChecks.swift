@@ -93,6 +93,7 @@ func runMessageTextChecks() {
         let stored = "[IMPORTANT: You are running as a scheduled cron job. Deliver the result to: local.]\n\n[CURRENT RUN TIME: 2026-11-22 09:00 EST]\n\nSummarize my day"
         expect(MessageText.display(stored) == "Summarize my day", MessageText.display(stored))
         expect(MessageText.display("Normal [bracket] text") == "Normal [bracket] text")
+        expect(MessageText.display("[IMPORTANT: You are running as a scheduled cron job. Deliver the res") == "", "truncated preview")
     }
     check("message text: interruption markers") {
         expect(MessageText.isInterruption("Operation interrupted: waiting for model response (12s elapsed)."))
