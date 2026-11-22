@@ -1,0 +1,81 @@
+name: Release
+
+# Push a tag like v0.2.0 (or run manually with a version) to build, sign, notarize and publish a DMG.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version (e.g. 0.2.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          V="$INPUT_VERSION"
+          [[ -z "$V" ]] && V="${GITHUB_REF_NAME#v}"
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "::error title=Bad version::'$V' is not semver"; exit 1; }
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          echo "BUILD=${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      - name: Toolchain
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          brew install create-dmg
+
+      # Checks run before any certificate touches the keychain.
+      - name: Checks
+        run: swift run hermes-checks
+
+      - name: Import signing certificate
+        env:
+          DEVELOPER_ID_APP_P12: ${{ secrets.DEVELOPER_ID_APP_P12 }}
+          DEVELOPER_ID_APP_PASSWORD: ${{ secrets.DEVELOPER_ID_APP_PASSWORD }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: scripts/ci/import-certs.sh
+
+      # AIDEV-NOTE: package.sh silently skips notarization without creds; a release must never ship that.
+      - name: Require full signing setup
+        run: |
+          [[ -n "${TALARIA_SIGN_IDENTITY:-}" && -n "${NOTARY_KEY_PATH:-}" ]] || {
+            echo "::error title=Incomplete signing setup::Need a Developer ID Application identity and the notary API key (ASC_API_KEY_*). Refusing to publish an unnotarized release."
+            exit 1; }
+
+      - name: Build, sign, package, notarize
+        timeout-minutes: 30
+        run: |
+          ./scripts/build.sh
+          ./scripts/package.sh
+
+      - name: Verify
+        run: |
+          codesign --verify --deep --strict --verbose=2 build/Talaria.app
+          xcrun stapler validate "build/dist/Talaria-$VERSION.dmg"
+          spctl --assess --type open --context context:primary-signature -v "build/dist/Talaria-$VERSION.dmg"
+
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v$VERSION"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Talaria $VERSION" --generate-notes
+          gh release upload "$TAG" build/dist/* --clobber
+
+      - name: Clean up keychain and notary key
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/talaria-signing.keychain-db" || true; rm -f "$RUNNER_TEMP/AuthKey.p8"
