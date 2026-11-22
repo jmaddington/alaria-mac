@@ -125,7 +125,10 @@ struct JobDetail: View {
                 }
                 Picker("Repeat", selection: Binding(get: { draft.repeatTimes ?? 0 }, set: { draft.repeatTimes = $0 == 0 ? nil : $0 })) {
                     Text("Forever").tag(0)
-                    ForEach([1, 2, 3, 5, 10, 25], id: \.self) { Text("\($0) time\($0 == 1 ? "" : "s")").tag($0) }
+                    // Include the job's own count so an unusual value (e.g. 4) isn't a blank, invalid selection (hermes-mac-coe).
+                    ForEach(Array(Set([1, 2, 3, 5, 10, 25] + [draft.repeatTimes ?? 1])).sorted(), id: \.self) {
+                        Text("\($0) time\($0 == 1 ? "" : "s")").tag($0)
+                    }
                 }
                 TextField("Time zone", text: Binding(get: { draft.timezone ?? "" }, set: { draft.timezone = $0 }), prompt: Text("Hermes default"))
             }

@@ -102,6 +102,13 @@ struct MemoryList: View {
 struct MemoryDetail: View {
     @Environment(AppModel.self) private var model
     @ViewState private var confirm: String?
+    private var forgetTitle: String {
+        switch confirm { case "memory": "Forget everything Hermes has remembered?"; case "user": "Forget your profile?"; default: "Forget all memories and your profile?" }
+    }
+    private var forgetButton: String {
+        switch confirm { case "memory": "Forget Memories"; case "user": "Forget Profile"; default: "Forget Everything" }
+    }
+
     var body: some View {
         let lib = model.library
         Group {
@@ -138,12 +145,14 @@ struct MemoryDetail: View {
             } else { Color.clear }
         }
         .navigationTitle("Memory")
-        .confirmationDialog("This can't be undone.", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
-            Button("Forget", role: .destructive) {
+        // Name the scope being erased (hermes-mac-2cc).
+        .confirmationDialog(forgetTitle, isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+                            titleVisibility: .visible) {
+            Button(forgetButton, role: .destructive) {
                 guard let t = confirm, let c = model.client else { return }
                 model.run("Reset memory") { try await c.resetMemory(t); await lib.loadMemory(); model.flash("Done") }
             }
-        }
+        } message: { Text("This can't be undone.") }
     }
 }
 

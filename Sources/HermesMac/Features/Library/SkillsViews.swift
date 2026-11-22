@@ -36,7 +36,7 @@ struct SkillsList: View {
 
     private var filtered: [Skill] {
         let q = model.library.skillFilter.lowercased()
-        return model.library.skills.filter { q.isEmpty || $0.name.contains(q) || ($0.description ?? "").lowercased().contains(q) }
+        return model.library.skills.filter { q.isEmpty || $0.name.lowercased().contains(q) || ($0.description ?? "").lowercased().contains(q) }
     }
     /// Uncategorised skills group under "Other", which always sorts last.
     private var categories: [String] {
@@ -219,6 +219,13 @@ struct SkillDetail: View {
 }
 
 struct NewSkillSheet: View {
+    /// Body of a YAML double-quoted scalar: escape backslashes first, then quotes; newlines folded (hermes-mac-r3u).
+    static func yamlQuoted(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @ViewState private var name = ""
@@ -257,7 +264,7 @@ struct NewSkillSheet: View {
         let body = """
         ---
         name: \(slug)
-        description: "\(summary.replacingOccurrences(of: "\"", with: "'"))"
+        description: "\(Self.yamlQuoted(summary))"
         version: 1.0.0
         ---
 

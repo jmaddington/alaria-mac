@@ -1,8 +1,11 @@
 import Foundation
+import os
 import HermesKit
 import Observation
 import Security
 import SwiftUI
+
+private let keychainLog = Logger(subsystem: "net.jmaddington.hermes", category: "keychain")
 
 enum Keychain {
     static let service = "net.jmaddington.hermes"
@@ -13,13 +16,23 @@ enum Keychain {
         guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
         return String(data: d, encoding: .utf8)
     }
-    static func set(_ account: String, _ value: String?) {
+    /// Update-or-add, so a failed write never deletes the old secret first; returns false on failure (hermes-mac-azh).
+    @discardableResult
+    static func set(_ account: String, _ value: String?) -> Bool {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account]
-        SecItemDelete(q as CFDictionary)
-        guard let value, !value.isEmpty else { return }
-        var add = q; add[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        guard let value, !value.isEmpty else {
+            let st = SecItemDelete(q as CFDictionary)
+            return st == errSecSuccess || st == errSecItemNotFound
+        }
+        let data = Data(value.utf8)
+        var st = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if st == errSecItemNotFound {
+            var add = q; add[kSecValueData as String] = data
+            st = SecItemAdd(add as CFDictionary, nil)
+        }
+        if st != errSecSuccess { keychainLog.error("keychain write \(account, privacy: .public) failed status=\(st) [KEYCHAIN-WRITE-ERR]") }
+        return st == errSecSuccess
     }
 }
 
@@ -48,11 +61,14 @@ struct ConnectionSettings: Equatable {
         return s
     }
 
-    func save() {
+    /// Returns false if a secret couldn't be stored in the Keychain.
+    @discardableResult
+    func save() -> Bool {
         UserDefaults.standard.set(apiURL, forKey: "apiURL")
         UserDefaults.standard.set(dashboardURL, forKey: "dashboardURL")
-        Keychain.set("apiKey", apiKey)
-        Keychain.set("dashboardToken", dashboardToken)
+        let a = Keychain.set("apiKey", apiKey)
+        let b = Keychain.set("dashboardToken", dashboardToken)
+        return a && b
     }
 
     var isConfigured: Bool { URL(string: apiURL) != nil && !apiKey.isEmpty }
@@ -126,7 +142,7 @@ final class AppModel {
     func apply(_ s: ConnectionSettings) {
         let serverChanged = s.apiURL != settings.apiURL || s.dashboardURL != settings.dashboardURL
         settings = s
-        s.save()
+        if !s.save() { flash("Couldn't save the key to your Keychain. It will be forgotten when Hermes quits.") }
         if serverChanged { resetServerState() } // never send to a session id that only existed on the old server
         connect()
     }

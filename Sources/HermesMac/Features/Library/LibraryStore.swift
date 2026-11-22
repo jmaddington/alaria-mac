@@ -65,6 +65,7 @@ final class LibraryStore {
 
     func replace(_ j: CronJob) {
         if let i = jobs.firstIndex(where: { $0.id == j.id }) { jobs[i] = j } else { jobs.append(j) }
+        jobs.sort { ($0.name ?? "") < ($1.name ?? "") } // same order as loadJobs, after renames/creates
     }
 
     func loadToolsets() async {
