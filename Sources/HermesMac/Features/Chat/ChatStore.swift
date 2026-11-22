@@ -99,7 +99,7 @@ final class ChatStore {
             switch m.role {
             case "user":
                 let (text, attachments) = Attachment.fromStored(m)
-                out.append(ChatEntry(id: "m\(m.id)", role: .user, text: text, attachments: attachments, date: date))
+                out.append(ChatEntry(id: "m\(m.id)", role: .user, text: MessageText.display(text), attachments: attachments, date: date))
             case "assistant":
                 let text = (m.content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 var tools: [ToolActivity] = []
@@ -114,6 +114,9 @@ final class ChatStore {
                     out[out.count - 1].text = text
                     out[out.count - 1].tools += tools
                     if let t = m.thinking { out[out.count - 1].thinking += t }
+                } else if MessageText.isInterruption(text) {
+                    // Hermes' stored "Your request was not processed..." for a stopped turn: show the quiet marker.
+                    out.append(ChatEntry(id: "m\(m.id)", role: .assistant, text: "", tools: tools, error: "Stopped", date: date))
                 } else if !text.isEmpty || !tools.isEmpty {
                     out.append(ChatEntry(id: "m\(m.id)", role: .assistant, text: text, thinking: m.thinking ?? "", tools: tools, date: date))
                 }
@@ -197,7 +200,11 @@ final class ChatStore {
         case .toolFinished(let tid, let failed):
             update(id) { e in if let i = e.tools.firstIndex(where: { $0.id == tid }) { e.tools[i].state = failed ? .failed : .done } }
         case .approval(let a): update(id) { $0.approval = a }
-        case .completed(let content): update(id) { if !content.isEmpty { $0.text = content } }
+        case .completed(let content):
+            update(id) {
+                if MessageText.isInterruption(content) { $0.text = ""; $0.error = "Stopped" }
+                else if !content.isEmpty { $0.text = content }
+            }
         case .failed(let msg): update(id) { $0.error = Self.readable(msg) }
         case .cancelled: update(id) { $0.error = "Stopped" } // mark interrupted replies, with or without text (hermes-mac-d76)
         case .status: break

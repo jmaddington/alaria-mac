@@ -150,14 +150,22 @@ struct JobDetail: View {
                 }
                 if !runs.isEmpty {
                     SwiftUI.Section("History") {
+                        // Runs are sessions: each row opens that run's conversation (reported by the iOS port).
                         ForEach(runs, id: \.stableID) { r in
-                            HStack {
-                                StatusDot(color: r.status == "ok" || r.status == "success" || r.status == "completed" ? .green : .orange)
-                                Text(r.startedAt?.description ?? "—").font(.callout.monospacedDigit())
-                                Spacer()
-                                Text(r.status?.capitalized ?? "").foregroundStyle(.secondary)
+                            Button { openRun(r) } label: {
+                                HStack {
+                                    StatusDot(color: r.succeeded == false ? .orange : .green)
+                                    Text(Self.runDate(r.startedAt)).font(.callout.monospacedDigit())
+                                    Spacer()
+                                    Text(r.status?.capitalized ?? (r.succeeded == false ? (r.endReason ?? "Failed") : "Completed"))
+                                        .foregroundStyle(.secondary)
+                                    Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+                                }
+                                .contentShape(Rectangle())
                             }
-                            .help(r.error ?? r.output ?? "")
+                            .buttonStyle(.plain)
+                            .disabled(r.conversationID == nil)
+                            .help(r.error ?? r.output ?? "Open this run's conversation")
                         }
                     }
                 }
@@ -207,6 +215,23 @@ struct JobDetail: View {
         let key = isNew ? "new" : loadedID
         guard let key else { return }
         lib.jobDrafts[key] = dirty ? draft : nil
+    }
+
+    private func openRun(_ r: CronRun) {
+        guard let id = r.conversationID else { return }
+        model.section = .chats
+        model.chats.select(id)
+        model.chats.scrollTarget = id
+    }
+
+    /// started_at arrives as epoch seconds or ISO text.
+    static func runDate(_ v: JSONValue?) -> String {
+        let d: Date? = switch v {
+        case .number(let n)?: Date(timeIntervalSince1970: n)
+        case .string(let s)?: parseISO(s) ?? Double(s).map { Date(timeIntervalSince1970: $0) }
+        default: nil
+        }
+        return d.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—"
     }
 
     private func loadRuns() async {

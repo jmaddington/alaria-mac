@@ -86,3 +86,17 @@ func runGoogleTTSChecks() {
         expect((GoogleVoice(apiKey: "k").requestBody("x")["audioConfig"] as? [String: Any])?["speakingRate"] == nil, "rate 1.0 omitted")
     }
 }
+
+/// Message display cleanup (cron preamble, stopped turns) - reported by the iOS port 2026-11-22.
+func runMessageTextChecks() {
+    check("message text: cron preamble stripped for display") {
+        let stored = "[IMPORTANT: You are running as a scheduled cron job. Deliver the result to: local.]\n\n[CURRENT RUN TIME: 2026-11-22 09:00 EST]\n\nSummarize my day"
+        expect(MessageText.display(stored) == "Summarize my day", MessageText.display(stored))
+        expect(MessageText.display("Normal [bracket] text") == "Normal [bracket] text")
+    }
+    check("message text: interruption markers") {
+        expect(MessageText.isInterruption("Operation interrupted: waiting for model response (12s elapsed)."))
+        expect(MessageText.isInterruption("Your request was not processed. Send it again to retry."))
+        expect(!MessageText.isInterruption("The operation was a success."))
+    }
+}

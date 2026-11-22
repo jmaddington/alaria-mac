@@ -50,6 +50,7 @@ runMarkdownChecks()
 runSplitterChecks()
 runSecurityChecks()
 runGoogleTTSChecks()
+runMessageTextChecks()
 runVoiceChecks()
 runMCPChecks()
 

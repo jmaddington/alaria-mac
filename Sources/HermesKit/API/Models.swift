@@ -184,7 +184,18 @@ public struct CronRun: Codable, Identifiable, Hashable, Sendable {
     public var error: String?
     public var output: String?
     public var sessionId: String?
+    /// The dashboard's runs endpoint returns SESSION rows (id = session id, started_at, ended_at, end_reason such as
+    /// "cron_complete"), not status/output; these carry that shape (reported by the iOS port 2026-11-22).
+    public var endedAt: JSONValue?
+    public var endReason: String?
     public var stableID: String { id ?? runId ?? UUID().uuidString }
+    /// Session to open for this run.
+    public var conversationID: String? { sessionId ?? id }
+    public var succeeded: Bool? {
+        if let s = status { return ["ok", "success", "completed"].contains(s) }
+        if let r = endReason { return r == "cron_complete" }
+        return nil
+    }
 }
 struct RunsEnvelope: Decodable { let runs: [CronRun] }
 

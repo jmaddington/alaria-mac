@@ -135,6 +135,9 @@ struct SessionRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 if session.pinned == true { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.orange) }
+                if session.source == "cron" {
+                    Image(systemName: "clock").font(.caption2).foregroundStyle(.secondary).help("Scheduled job run").accessibilityLabel("Scheduled job run")
+                }
                 Text(session.displayTitle).font(.body.weight(.medium)).lineLimit(1)
                 Spacer(minLength: 4)
                 // Ticks every minute; the list itself only reloads on demand (hermes-mac-1d5).
@@ -150,7 +153,7 @@ struct SessionRow: View {
         .padding(.vertical, 3)
     }
     private var detail: String {
-        if let p = session.preview, !p.isEmpty, p != session.title { return p }
+        if let p = session.preview.map(MessageText.display), !p.isEmpty, p != session.title { return p }
         let n = session.messageCount ?? 0
         return n == 0 ? "Empty" : "\(n) message\(n == 1 ? "" : "s")"
     }
