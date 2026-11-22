@@ -171,6 +171,13 @@ struct UsagePeriods: View {
 struct UsageDetail: View {
     @Environment(AppModel.self) private var model
     @ViewState private var report: UsageReport?
+    private var periodStart: Date {
+        Calendar.current.startOfDay(for: .now.addingTimeInterval(-Double(model.library.usageDays - 1) * 86_400))
+    }
+    static func dayDate(_ s: String) -> Date {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.locale = Locale(identifier: "en_US_POSIX")
+        return f.date(from: s) ?? .now
+    }
     var body: some View {
         Group {
             if model.client?.hasDashboard != true { Color.clear }
@@ -185,12 +192,15 @@ struct UsageDetail: View {
                         }
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Tokens per day").font(.headline)
+                            // Real time axis over the whole period, so one active day is one slim bar, not the full width.
                             Chart(r.daily ?? []) { d in
-                                BarMark(x: .value("Day", d.day), y: .value("Tokens", d.inputTokens ?? 0))
+                                let day = Self.dayDate(d.day)
+                                BarMark(x: .value("Day", day, unit: .day), y: .value("Tokens", d.inputTokens ?? 0))
                                     .foregroundStyle(by: .value("Kind", "Input"))
-                                BarMark(x: .value("Day", d.day), y: .value("Tokens", d.outputTokens ?? 0))
+                                BarMark(x: .value("Day", day, unit: .day), y: .value("Tokens", d.outputTokens ?? 0))
                                     .foregroundStyle(by: .value("Kind", "Output"))
                             }
+                            .chartXScale(domain: periodStart...Calendar.current.startOfDay(for: .now.addingTimeInterval(86_400)))
                             .chartForegroundStyleScale(["Input": Theme.accent.opacity(0.55), "Output": Theme.accent])
                             .frame(height: 220)
                             .overlay { if (r.daily ?? []).isEmpty { Text("No activity in this period").foregroundStyle(.secondary) } }
@@ -201,7 +211,7 @@ struct UsageDetail: View {
                                 HStack {
                                     Text(m.model).font(.body.weight(.medium))
                                     Spacer()
-                                    Text("\((m.inputTokens ?? 0).compact) in · \((m.outputTokens ?? 0).compact) out · \(m.sessions ?? 0) chats")
+                                    Text("\((m.inputTokens ?? 0).compact) in · \((m.outputTokens ?? 0).compact) out · \(m.sessions ?? 0) \((m.sessions ?? 0) == 1 ? "chat" : "chats")")
                                         .foregroundStyle(.secondary).monospacedDigit()
                                 }
                                 .padding(.vertical, 6)
@@ -268,7 +278,7 @@ struct LogDetail: View {
             else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 1) {
+                        LazyVStack(alignment: .leading, spacing: 4) {
                             ForEach(Array(shown.enumerated()), id: \.offset) { i, l in
                                 Text(l).font(.system(size: 11.5, design: .monospaced))
                                     .foregroundStyle(l.contains(" ERROR ") ? .red : l.contains(" WARNING ") ? .orange : .primary)

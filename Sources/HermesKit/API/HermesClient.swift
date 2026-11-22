@@ -267,7 +267,8 @@ public final class HermesClient: Sendable {
 
     public func logs(file: String, lines: Int = 300, search: String? = nil) async throws -> [String] {
         let r: LogLines = try await requireDash().get("/api/logs", query: ["file": file, "lines": "\(lines)", "search": search])
-        return r.lines
+        // Server lines keep their trailing newline; strip so views do not double-space.
+        return r.lines.map { $0.trimmingCharacters(in: .newlines) }
     }
 
     public func usage(days: Int) async throws -> UsageReport {

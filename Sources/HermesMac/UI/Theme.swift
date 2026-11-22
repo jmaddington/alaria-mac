@@ -82,5 +82,5 @@ func parseISO(_ s: String?) -> Date? {
 }
 
 extension Int {
-    var compact: String { formatted(.number.notation(.compactName)) }
+    var compact: String { formatted(.number.notation(.compactName).precision(.fractionLength(0...1))) }
 }

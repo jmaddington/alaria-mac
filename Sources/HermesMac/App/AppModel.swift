@@ -122,7 +122,7 @@ final class AppModel {
         Task {
             do {
                 let h = try await client.health()
-                connection = .connected(version: h.version)
+                connection = .connected(version: h.version == "unknown" ? nil : h.version)
                 await chats.reload()
                 await library.loadJobs()
                 await library.loadSkills()

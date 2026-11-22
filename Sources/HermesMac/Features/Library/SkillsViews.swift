@@ -1,3 +1,4 @@
+import AppKit
 import HermesKit
 import SwiftUI
 
@@ -12,8 +13,8 @@ struct SkillsList: View {
             else {
                 List(selection: $lib.skillSelection) {
                     ForEach(categories, id: \.self) { cat in
-                        SwiftUI.Section(cat.replacingOccurrences(of: "-", with: " ").capitalized) {
-                            ForEach(filtered.filter { ($0.category ?? "Other") == cat }) { s in
+                        SwiftUI.Section(Self.title(cat)) {
+                            ForEach(filtered.filter { Self.cat($0) == cat }) { s in
                                 SkillRow(skill: s).tag(Optional(s.name))
                             }
                         }
@@ -37,7 +38,16 @@ struct SkillsList: View {
         let q = model.library.skillFilter.lowercased()
         return model.library.skills.filter { q.isEmpty || $0.name.contains(q) || ($0.description ?? "").lowercased().contains(q) }
     }
-    private var categories: [String] { Array(Set(filtered.map { $0.category ?? "Other" })).sorted() }
+    /// Uncategorised skills group under "Other", which always sorts last.
+    private var categories: [String] {
+        Array(Set(filtered.map(Self.cat))).sorted { ($0 == "other" ? 1 : 0, $0) < ($1 == "other" ? 1 : 0, $1) }
+    }
+    static func cat(_ s: Skill) -> String { (s.category ?? "").isEmpty ? "other" : s.category!.lowercased() }
+    static func title(_ c: String) -> String {
+        c.split(whereSeparator: { $0 == "-" || $0 == "_" || $0 == " " })
+            .map { ["ai", "ml", "api", "mcp", "ui", "cli", "llm"].contains($0.lowercased()) ? $0.uppercased() : $0.capitalized }
+            .joined(separator: " ")
+    }
 }
 
 struct SkillRow: View {
@@ -63,6 +73,11 @@ struct SkillDetail: View {
     @ViewState private var content = ""
     @ViewState private var original = ""
     @ViewState private var path: String?
+    /// Server paths are long and absolute; show from the skills root down ("skills/apple/notes/SKILL.md").
+    static func shortPath(_ p: String) -> String {
+        if let r = p.range(of: "/skills/", options: .backwards) { return "skills/" + p[r.upperBound...] }
+        return (p as NSString).abbreviatingWithTildeInPath
+    }
     @ViewState private var loading = false
     @ViewState private var saving = false
     @ViewState private var preview = false
@@ -83,7 +98,7 @@ struct SkillDetail: View {
                         ScrollView { MarkdownView(text: stripFrontMatter(content)).frame(maxWidth: Theme.readingWidth).padding(32).frame(maxWidth: .infinity) }
                     } else {
                         TextEditor(text: $content)
-                            .font(.system(size: 13, design: .monospaced))
+                            .font(Font(NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)))
                             .scrollContentBackground(.hidden)
                             .padding(.horizontal, 20).padding(.vertical, 14)
                             .disabled(skill.locked == true)
@@ -131,7 +146,7 @@ struct SkillDetail: View {
                     if dirty { Pill(text: "Edited", color: .orange) }
                 }
                 Text(s.description ?? "").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                if let path { Text(path).font(.caption).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1).truncationMode(.middle) }
+                if let path { Text(Self.shortPath(path)).font(.caption).foregroundStyle(.tertiary).textSelection(.enabled).lineLimit(1).truncationMode(.middle) }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 8) {
