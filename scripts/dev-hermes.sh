@@ -42,6 +42,9 @@ platforms:
     enabled: true
     host: 127.0.0.1
     port: 8642
+agent:
+  # The local Hermes must not touch this Mac (user requirement); applies to every platform, incl. cron.
+  disabled_toolsets: [terminal, file, code_execution, computer_use, browser, vision]
 EOF
 
 set -a; source "$HOME_DIR/.env"; set +a
