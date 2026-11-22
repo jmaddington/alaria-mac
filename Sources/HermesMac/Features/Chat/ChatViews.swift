@@ -163,6 +163,7 @@ private struct ScrollSpot: Equatable { var offset: CGFloat; var gap: CGFloat }
 struct ConversationView: View {
     @Environment(AppModel.self) private var model
     @ViewState private var followTail = true
+    @ViewState private var userScrolling = false
     private var chats: ChatStore { model.chats }
 
     var body: some View {
@@ -183,23 +184,37 @@ struct ConversationView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .scrollContentBackground(.hidden)
+                    .id(chats.selection) // each chat gets its own scroll position, starting at the bottom
                     // Size changes (e.g. expanding "Thought process") grow downward instead of pushing the clicked header
                     // off screen; streaming follow is the explicit scrollTo below (hermes-mac-1hn).
                     .defaultScrollAnchor(.top, for: .sizeChanges)
-                    // Follow streaming text only while the reader is at the bottom; scrolling up to read
-                    // earlier text must not be yanked back on every delta (hermes-mac-kiu).
-                    // Follow only while the reader hasn't scrolled up. An upward offset change is always the user
-                    // (streaming only grows content; scrollTo only moves down); reaching the bottom resumes following.
-                    // The old "within 40 pt of bottom" check raced content growth and re-pinned mid-gesture (hermes-mac-7qk).
+                    // AIDEV-NOTE: auto-scroll rules (user: "the main chat automatically scrolls down"):
+                    // - every chat opens at the bottom (initialOffset anchor + a second scroll once lazy rows measure);
+                    // - new messages and streaming text keep it pinned to the bottom;
+                    // - ONLY a user scroll gesture upward stops following (lazy-row re-measuring also moves the offset,
+                    //   which must not count); scrolling back to the bottom resumes it. (hermes-mac-kiu/-7qk)
+                    .defaultScrollAnchor(.bottom, for: .initialOffset)
+                    .onScrollPhaseChange { _, phase in
+                        userScrolling = phase == .interacting || phase == .decelerating || phase == .tracking
+                    }
                     .onScrollGeometryChange(for: ScrollSpot.self) { g in
                         ScrollSpot(offset: g.contentOffset.y, gap: g.contentSize.height - (g.contentOffset.y + g.containerSize.height))
                     } action: { old, new in
-                        if new.offset < old.offset - 3 { followTail = false } // small jitters come from lazy-row re-estimation
-                        else if new.gap <= 4 { followTail = true }
+                        if userScrolling && new.offset < old.offset - 1 { followTail = false }
+                        else if new.gap <= 24 { followTail = true }
                     }
                     .onChange(of: chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
-                    .onChange(of: chats.entries.count) { followTail = true; withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) } }
-                    .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+                    .onChange(of: chats.entries.count) {
+                        followTail = true
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                        // Lazy rows above get measured after the first jump; land again once they have.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+                    .onAppear {
+                        followTail = true
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
                 }
             }
             Composer()

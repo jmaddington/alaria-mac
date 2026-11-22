@@ -207,6 +207,19 @@ final class BrowserAgent {
         case "client_browser_get_text":
             try requirePage()
             return .text(try await js("return __hermes.text(n)", ["n": min(max(a.int("max_chars") ?? 20000, 500), 200_000)]))
+        case "client_browser_get_html":
+            try requirePage()
+            // Runs in the isolated content world: it reads the shared DOM, the page can't see or patch this code.
+            return .text(try await js("""
+                const root = sel ? document.querySelector(sel) : document.documentElement;
+                if (!root) return `No element matches ${sel}`;
+                const c = root.cloneNode(true);
+                c.querySelectorAll('script,style,noscript,template,iframe').forEach(e => e.remove());
+                c.querySelectorAll('svg').forEach(e => { e.innerHTML = ''; });
+                c.querySelectorAll('input[type=password]').forEach(e => e.removeAttribute('value'));
+                const html = c.outerHTML;
+                return html.length > n ? html.slice(0, n) + `\n<!-- truncated: ${html.length} chars total -->` : html;
+                """, ["sel": a.string("selector") ?? "", "n": min(max(a.int("max_chars") ?? 40_000, 1_000), 200_000)]))
         case "client_browser_screenshot":
             try requirePage()
             let png = try await screenshot()
