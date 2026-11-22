@@ -157,7 +157,7 @@ final class ChatStore {
             update(id) { e in if let i = e.tools.firstIndex(where: { $0.id == tid }) { e.tools[i].state = failed ? .failed : .done } }
         case .approval(let a): update(id) { $0.approval = a }
         case .completed(let content): update(id) { if !content.isEmpty { $0.text = content } }
-        case .failed(let msg): update(id) { $0.error = msg }
+        case .failed(let msg): update(id) { $0.error = Self.readable(msg) }
         case .cancelled: update(id) { $0.error = $0.text.isEmpty ? "Stopped" : nil }
         case .status: break
         }
@@ -230,5 +230,19 @@ final class ChatStore {
         let q = searchText.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty, let client, client.hasDashboard else { searchHits = []; return }
         do { searchHits = try await client.search(q) } catch { searchHits = [] }
+    }
+
+    /// Hermes reports run failures as bare codes ("permission_denied"); turn known ones into a sentence,
+    /// and at least de-snake unknown ones. The raw code is kept in parentheses for bug reports.
+    static func readable(_ msg: String) -> String {
+        let known = [
+            "permission_denied": "Hermes refused to run this turn",
+            "invalid_params": "Hermes rejected the request",
+            "busy": "Hermes is busy with another turn",
+            "admission_closed": "Hermes is shutting down",
+        ]
+        guard !msg.contains(" ") else { return msg }
+        let text = known[msg] ?? msg.replacingOccurrences(of: "_", with: " ").capitalized
+        return "\(text) (\(msg))"
     }
 }

@@ -37,7 +37,9 @@ public final class HermesClient: Sendable {
     }
 
     public func createSession(title: String? = nil, systemPrompt: String? = nil) async throws -> HermesSession {
-        let r: SessionEnvelope = try await api.json("POST", "/api/sessions", ["title": title, "system_prompt": systemPrompt, "source": "desktop"])
+        // AIDEV-NOTE: no custom "source": chat admission refuses sessions whose source isn't api_server/bot_room
+        // (session_api_turn.admit_api_steps -> permission_denied). Server default is api_server.
+        let r: SessionEnvelope = try await api.json("POST", "/api/sessions", ["title": title, "system_prompt": systemPrompt])
         return r.session
     }
 

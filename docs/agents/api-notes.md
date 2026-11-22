@@ -20,3 +20,7 @@ Gotchas found on the wire:
 - Approvals from the session stream are answered at `POST /v1/runs/{run_id}/approval {choice, request_id}`.
 - A job created with `paused:true` reports `state:"paused"`, `enabled:false`.
 - Hermes refuses models with < 64K context (`MINIMUM_CONTEXT_LENGTH`).
+
+## Session source vs chat admission (found 2026-11-22 in GUI testing)
+`POST /api/sessions` accepts any `source`, but `/api/sessions/{id}/chat/stream` refuses (`permission_denied`)
+sessions whose source is not `api_server` or `bot_room`. Never send `source`; the default is `api_server`.

@@ -67,6 +67,8 @@ struct NeedsDashboard: View {
 
 extension Date {
     var relative: String {
+        // Server and client clocks drift; anything within a minute (or "in the future") is just "now".
+        if timeIntervalSinceNow > -60 { return "now" }
         let f = RelativeDateTimeFormatter(); f.unitsStyle = .short
         return f.localizedString(for: self, relativeTo: .now)
     }
