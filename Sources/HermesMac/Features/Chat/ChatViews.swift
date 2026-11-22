@@ -183,6 +183,9 @@ struct ConversationView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .scrollContentBackground(.hidden)
+                    // Size changes (e.g. expanding "Thought process") grow downward instead of pushing the clicked header
+                    // off screen; streaming follow is the explicit scrollTo below (hermes-mac-1hn).
+                    .defaultScrollAnchor(.top, for: .sizeChanges)
                     // Follow streaming text only while the reader is at the bottom; scrolling up to read
                     // earlier text must not be yanked back on every delta (hermes-mac-kiu).
                     // Follow only while the reader hasn't scrolled up. An upward offset change is always the user
@@ -334,22 +337,56 @@ struct ToolChips: View {
     var tools: [ToolActivity]
     var body: some View {
         FlowLayout(spacing: 6) {
-            ForEach(tools) { t in
-                HStack(spacing: 6) {
-                    switch t.state {
-                    case .running: ProgressView().controlSize(.mini)
-                    case .done: Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.green)
-                    case .failed: Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(.red)
-                    }
-                    Text(t.name.replacingOccurrences(of: "_", with: " ")).font(.caption.weight(.medium))
-                    if let p = t.preview, !p.isEmpty { Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 220) }
+            ForEach(tools) { t in ToolChip(tool: t) }
+        }
+    }
+}
+
+/// A tool call; click for the full call detail in a popover (truncated chips had no way to open) (hermes-mac-1hn).
+struct ToolChip: View {
+    var tool: ToolActivity
+    @ViewState private var open = false
+    private var name: String { tool.name.replacingOccurrences(of: "_", with: " ") }
+    private var stateText: String { tool.state == .running ? "Running" : tool.state == .done ? "Done" : "Failed" }
+    var body: some View {
+        Button { open.toggle() } label: {
+            HStack(spacing: 6) {
+                switch tool.state {
+                case .running: ProgressView().controlSize(.mini)
+                case .done: Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.green)
+                case .failed: Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(.red)
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(t.name.replacingOccurrences(of: "_", with: " ")), \(t.state == .running ? "running" : t.state == .done ? "done" : "failed")")
-                .padding(.horizontal, 9).padding(.vertical, 5)
-                .background(Capsule().fill(.quaternary.opacity(0.6)))
-                .help(t.preview ?? t.name)
+                Text(name).font(.caption.weight(.medium))
+                if let p = tool.preview, !p.isEmpty { Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 220) }
             }
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(Capsule().fill(.quaternary.opacity(0.6)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(name), \(stateText.lowercased())")
+        .accessibilityHint("Shows the tool call")
+        .popover(isPresented: $open, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label(name, systemImage: "wrench.and.screwdriver").font(.headline)
+                    Spacer()
+                    Text(stateText).font(.caption).foregroundStyle(tool.state == .failed ? .red : .secondary)
+                }
+                if let p = tool.preview, !p.isEmpty {
+                    ScrollView {
+                        Text(p).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 240)
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.quaternary.opacity(0.4)))
+                } else {
+                    Text("No details were reported for this call.").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+            .frame(width: 380)
         }
     }
 }
