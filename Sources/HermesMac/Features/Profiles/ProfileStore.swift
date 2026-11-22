@@ -42,7 +42,7 @@ final class ProfileStore {
     // MARK: keys
 
     /// Per server: the default server keeps the original account names.
-    static func keyAccount(_ name: String) -> String { "apiKey.profile.\(name)" + ConnectionSettings.scope }
+    static func keyAccount(_ name: String, scope: String = ConnectionSettings.scope) -> String { "apiKey.profile.\(name)" + scope }
     func storedKey(_ name: String) -> String? { Keychain.get(Self.keyAccount(name)).flatMap { $0.isEmpty ? nil : $0 } }
 
     /// The client for `name`, derived from any client on the same servers.
@@ -62,11 +62,13 @@ final class ProfileStore {
     /// longer serves, falls back to the gateway's own so the app never sits on a dead route.
     func load() async {
         guard let c = app?.client, c.hasDashboard else { profiles = []; return }
+        let gen = generation
         do {
             async let list = c.profiles()
             async let active = c.activeProfile()
             async let servedList = c.servedProfiles()
             let (ps, a, sv) = try await (list, active, servedList)
+            guard gen == generation, !Task.isCancelled else { return } // server switched while loading
             profiles = ps.sorted { ($0.isDefault == true ? 0 : 1, $0.name) < ($1.isDefault == true ? 0 : 1, $1.name) }
             if let cur = a.current, cur != "custom" { own = cur }
             served = sv.map { Set($0).union([own]) }
@@ -86,9 +88,15 @@ final class ProfileStore {
 
     /// Another server was selected: profiles, their keys and the remembered choice are per server.
     func serverChanged() {
+        generation += 1 // in-flight loads/switches from the old server drop their results
         profiles = []; served = nil; own = "default"; switching = nil; keyPrompt = nil; pendingMessage = nil
         selected = UserDefaults.standard.string(forKey: "profile.selected" + ConnectionSettings.scope)
     }
+
+    /// Bumped on every server switch; async work captures it and bails if it changed (security review: a key or
+    /// selection from server A must never be stored under server B).
+    // AIDEV-NOTE: security; check `generation` after every await that leads to a state/Keychain write.
+    private(set) var generation = 0
 
     private func setSelected(_ name: String?) {
         selected = (name == own) ? nil : name
@@ -105,10 +113,12 @@ final class ProfileStore {
         if name == current { return true }
         if !isServed(name) { app.flash(notServedMessage(name)); return false }
         let target = client(for: name, from: base)
+        let gen = generation
         switching = name
-        defer { switching = nil }
+        defer { if gen == generation { switching = nil } }
         do {
             _ = try await target.sessions(limit: 1) // /health is unauthenticated; this proves the route AND the key
+            guard gen == generation else { return false }
         } catch let e as HermesError where e.isAuthFailure {
             profileLog.info("profile \(name, privacy: .public) refused our key [PROF-NEEDS-KEY]")
             keyPrompt = name
@@ -139,13 +149,16 @@ final class ProfileStore {
             throw HermesError(status: 0, message: "Couldn't generate a key")
         }
         let key = bytes.map { String(format: "%02x", $0) }.joined()
+        let scope = ConnectionSettings.scope // the server this key is being written to, captured before the await
         try await c.setEnv("API_SERVER_KEY", value: key, profile: name)
-        guard saveKey(key, for: name) else { throw HermesError(status: 0, message: "Couldn't save the key to your Keychain") }
+        guard saveKey(key, for: name, scope: scope) else { throw HermesError(status: 0, message: "Couldn't save the key to your Keychain") }
         profileLog.info("provisioned API key for profile \(name, privacy: .public) [PROF-KEY-NEW]")
     }
 
     @discardableResult
-    func saveKey(_ key: String?, for name: String) -> Bool { Keychain.set(Self.keyAccount(name), key) }
+    func saveKey(_ key: String?, for name: String, scope: String = ConnectionSettings.scope) -> Bool {
+        Keychain.set(Self.keyAccount(name, scope: scope), key)
+    }
 
     /// After the key sheet: try the switch again and deliver a message that was waiting on it.
     func retryAfterKey(_ name: String) async {
@@ -165,10 +178,11 @@ final class ProfileStore {
 
     func delete(_ name: String) async throws {
         guard let c = app?.client, name != own else { return }
+        let scope = ConnectionSettings.scope, gen = generation
         if current == name { _ = await switchTo(own) }
         try await c.deleteProfile(name)
-        saveKey(nil, for: name)
-        await load()
+        saveKey(nil, for: name, scope: scope)
+        if gen == generation { await load() }
     }
 
     func setDescription(_ name: String, _ text: String) async throws {
