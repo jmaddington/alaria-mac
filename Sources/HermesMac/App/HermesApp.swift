@@ -34,6 +34,10 @@ struct HermesApp: App {
                     Button(s.title) { model.section = s }.keyboardShortcut(KeyEquivalent(Character("\(i + 1)")), modifiers: .command)
                 }
                 Divider()
+                Button(model.browser.isOpen ? "Hide Browser" : "Show Browser") { model.browser.toggle() }
+                    .keyboardShortcut("b", modifiers: [.command, .shift])
+                Button("Open Location…") { model.browser.focusAddress() }.keyboardShortcut("l")
+                Divider()
             }
         }
 

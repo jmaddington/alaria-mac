@@ -1,3 +1,4 @@
+import AppKit
 import HermesKit
 import SwiftUI
 
@@ -15,6 +16,17 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 420)
         } detail: {
             detail
+                .toolbar { ToolbarItem(placement: .primaryAction) { BrowserToolbarButton() } }
+                .environment(\.openURL, OpenURLAction { url in
+                    // Chat links open in the browser panel (Settings › Browser); ⌘-click keeps the default browser.
+                    guard UserDefaults.standard.object(forKey: "browser.openChatLinks") as? Bool ?? true,
+                          !NSEvent.modifierFlags.contains(.command), model.browser.openFromChat(url) else { return .systemAction }
+                    return .handled
+                })
+        }
+        .inspector(isPresented: Binding(get: { model.browser.isOpen }, set: { model.browser.isOpen = $0 })) {
+            BrowserPanel()
+                .inspectorColumnWidth(min: 360, ideal: 520, max: 1000)
         }
         .overlay(alignment: .bottom) { ToastView() }
         .overlay { if model.voice.isActive || isVoiceError { VoiceOverlay().transition(.opacity) } }

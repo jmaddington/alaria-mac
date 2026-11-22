@@ -124,11 +124,14 @@ final class AppModel {
     let chats = ChatStore()
     let voice = VoiceController()
     let library = LibraryStore()
+    let browser = BrowserModel()
 
     init() {
         chats.app = self
         voice.app = self
         library.app = self
+        browser.app = self
+        browser.agent.startIfEnabled() // loopback MCP server for Hermes, only when the user allowed it
         if settings.isConfigured { connect() } else { showOnboarding = true }
         installVoiceTestHarness()
     }
