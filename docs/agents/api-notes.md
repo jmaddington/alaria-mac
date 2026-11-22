@@ -24,3 +24,19 @@ Gotchas found on the wire:
 ## Session source vs chat admission (found 2026-11-22 in GUI testing)
 `POST /api/sessions` accepts any `source`, but `/api/sessions/{id}/chat/stream` refuses (`permission_denied`)
 sessions whose source is not `api_server` or `bot_room`. Never send `source`; the default is `api_server`.
+
+## Profiles (verified 2026-11-22, bead hermes-mac-zc9)
+- A profile = a separate HERMES_HOME (`<root>/profiles/<name>/`): own config.yaml/model, .env, skills, memory,
+  SOUL.md, cron and **its own state.db, so sessions are per profile**. `default` is the root home.
+- List/create/delete/describe on the dashboard: `GET/POST /api/profiles`, `DELETE /api/profiles/{name}`,
+  `PUT /api/profiles/{name}/description`. `GET /api/profiles/active` -> `{active, current}`; `current` is the
+  dashboard's own profile. `POST /api/profiles/active` only flips the sticky CLI default - the app never calls it.
+- Every dashboard route we use takes `?profile=<name>` (skills, cron runs, toolsets, model, memory, config, logs,
+  analytics, search). `HermesClient.scoped(to:)` adds it.
+- API server: native routes are mirrored at `/p/<name>/...` on the same port, but only for profiles the gateway
+  serves: `gateway.multiplex_profiles: true` (dashboard `/api/status` `gateway_shared_with` lists them). Unknown or
+  unserved prefix -> 404 `{"error":"Unknown or unconfigured profile","code":"profile_unknown"}`. `/p/hermes/` aliases default.
+- Auth on `/p/<name>/` is that profile's OWN `API_SERVER_KEY` from its .env; none -> 401 (fail closed). New profiles
+  don't inherit it. `PUT /api/env?profile=<name> {key:"API_SERVER_KEY", value}` sets one; effective immediately.
+  `/health` is unauthenticated, so probe with `GET /api/sessions?limit=1`.
+- No per-turn routing into another profile's session: the app's `@name` mention starts a new chat in that profile.
