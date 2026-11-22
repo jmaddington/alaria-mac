@@ -17,6 +17,8 @@ final class LibraryStore {
     /// switching skill, job or section never throws edits away (hermes-mac-fz5). Cleared on Save/Revert.
     var skillDrafts: [String: String] = [:]
     var skillScrollTarget: String?
+    /// Unsaved config.yaml text; Settings tabs rebuild their views, so it can't live in view state (hermes-mac-ach).
+    var configDraft: String?
     var jobDrafts: [String: HermesClient.JobDraft] = [:]
 
     /// Forget everything from the previous server (connection settings changed).

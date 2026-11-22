@@ -56,3 +56,20 @@ func runSplitterChecks() {
         expect(a.isEmpty && b == ["Pi is about 3.14 today."], "\(a) \(b)")
     }
 }
+
+/// Cleartext-key warning heuristics (hermes-mac-fkh, hermes-mac-zli).
+func runSecurityChecks() {
+    check("cleartext warning: private and tailnet hosts are fine") {
+        for u in ["http://127.0.0.1:8642", "http://localhost:8642", "http://10.1.2.3:8642", "http://192.168.1.5",
+                  "http://100.101.102.103", "http://mac.local", "http://box.tail1234.ts.net", "http://hermes",
+                  "http://[::1]:8642", "http://[fe80::1]:8642", "http://[fd12::1]:8642", "https://hermes.example.com"] {
+            expect(!ConnectionSecurity.sendsKeyInClear(u), u)
+        }
+    }
+    check("cleartext warning: public names, IPs and IPv6 warn") {
+        for u in ["http://hermes.example.com:8642", "http://10.0.0.1.evil.com:8642", "http://127.0.0.1.nip.io",
+                  "http://8.8.8.8", "http://[2001:4860:4860::8888]:8642"] {
+            expect(ConnectionSecurity.sendsKeyInClear(u), u)
+        }
+    }
+}

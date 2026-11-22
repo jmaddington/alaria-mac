@@ -17,8 +17,8 @@ struct ToolsList: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
                                     Text(t.label ?? t.name).font(.body.weight(.medium))
-                                    // Unavailable on this host is not the same as switched off (hermes-mac-eqx).
-                                    if t.available == false { Pill(text: "Unavailable") }
+                                    // AIDEV-NOTE: the server reports available == enabled for every toolset (checked 2026-11-22),
+                                    // so there is no host-availability signal to show; only on/off (hermes-mac-eqx).
                                 }
                                 Text(t.description ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
                                     .help(t.description ?? "")
@@ -29,7 +29,7 @@ struct ToolsList: View {
                                 model.run("Toolset") { try await c.setToolset(t.name, enabled: v); await lib.loadToolsets() }
                             })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
                         }
-                        .opacity(t.available == false ? 0.55 : (t.enabled == false ? 0.8 : 1))
+                        .opacity(t.enabled == false ? 0.6 : 1)
                         .hoverRow().tag(Optional(t.name))
                     }
                 }
@@ -87,7 +87,14 @@ struct MemoryList: View {
                     SwiftUI.Section("Providers") {
                         ForEach(lib.memory?.providers ?? []) { p in
                             HStack {
-                                Text(Self.providerName(p.name)).help(p.description ?? "")
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(Self.providerName(p.name)).help(p.description ?? "")
+                                    if p.available == false && lib.memory?.active != p.name {
+                                        // Say why, not just "Unavailable" (hermes-mac-jhg).
+                                        Text(Self.providerStatus(p.status))
+                                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                    }
+                                }
                                 Spacer()
                                 if lib.memory?.active == p.name { Pill(text: "Active", color: .green) }
                                 else if p.available == false {
@@ -105,6 +112,15 @@ struct MemoryList: View {
         }
         .navigationTitle("Memory")
     }
+    /// Server status codes -> sentences.
+    static func providerStatus(_ code: String?) -> String {
+        switch code {
+        case "needs_config": "Needs setup on the Hermes host"
+        case "unavailable", nil: "Not installed on the Hermes host"
+        case let c?: c.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
     /// Provider ids are lowercase slugs; known ones get their real names (hermes-mac-jhg).
     static func providerName(_ id: String) -> String {
         let known = ["retaindb": "RetainDB", "byterover": "ByteRover", "mem0": "Mem0", "honcho": "Honcho",
@@ -209,11 +225,17 @@ struct UsageDetail: View {
             else if let r = report {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 28) {
-                        HStack(spacing: 14) {
-                            Stat(title: "Input tokens", value: (r.totals?.totalInput ?? 0).compact)
-                            Stat(title: "Output tokens", value: (r.totals?.totalOutput ?? 0).compact)
-                            Stat(title: "Reasoning", value: (r.totals?.totalReasoning ?? 0).compact)
-                            Stat(title: "Est. cost", value: (r.totals?.totalEstimatedCost ?? 0).formatted(.currency(code: "USD")))
+                        // Four across when there's room, otherwise 2x2 (labels were truncating at 940 pt) (hermes-mac-bax).
+                        let tiles = [("Input tokens", (r.totals?.totalInput ?? 0).compact),
+                                     ("Output tokens", (r.totals?.totalOutput ?? 0).compact),
+                                     ("Reasoning", (r.totals?.totalReasoning ?? 0).compact),
+                                     ("Est. cost", (r.totals?.totalEstimatedCost ?? 0).formatted(.currency(code: "USD")))]
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 14) { ForEach(tiles, id: \.0) { Stat(title: $0.0, value: $0.1).frame(minWidth: 150) } }
+                            Grid(horizontalSpacing: 14, verticalSpacing: 14) {
+                                GridRow { Stat(title: tiles[0].0, value: tiles[0].1); Stat(title: tiles[1].0, value: tiles[1].1) }
+                                GridRow { Stat(title: tiles[2].0, value: tiles[2].1); Stat(title: tiles[3].0, value: tiles[3].1) }
+                            }
                         }
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Tokens per day").font(.headline)
@@ -326,6 +348,15 @@ struct LogDetail: View {
                     .onChange(of: lines) { if live, !shown.isEmpty { proxy.scrollTo(shown.count - 1, anchor: .bottom) } }
                 }
                 .background(Color(nsColor: .textBackgroundColor))
+                .overlay {
+                    if !filter.isEmpty && shown.isEmpty && !lines.isEmpty {
+                        VStack(spacing: 10) {
+                            EmptyState(symbol: "line.3.horizontal.decrease", title: "No matching lines",
+                                       message: "Nothing in the last \(lines.count) lines matches “\(filter)”.")
+                            Button("Clear Filter") { filter = "" }
+                        }
+                    }
+                }
             }
         }
         .navigationTitle("Logs")

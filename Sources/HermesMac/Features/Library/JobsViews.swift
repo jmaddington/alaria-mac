@@ -58,6 +58,7 @@ struct JobDetail: View {
     @ViewState private var saving = false
     @ViewState private var confirmDelete = false
     @ViewState private var skillPick = ""
+    @ViewState private var saveError: String?
 
     private var lib: LibraryStore { model.library }
     private var job: CronJob? { lib.jobs.first { $0.id == lib.jobSelection } }
@@ -76,7 +77,7 @@ struct JobDetail: View {
         .navigationTitle(isNew ? "New Job" : job?.name ?? "Scheduled")
         .onChange(of: job?.id, initial: true) { reset() }
         .onChange(of: lib.creatingJob) { if lib.creatingJob { draft = lib.jobDrafts["new"] ?? .init(); loadedID = nil } }
-        .onChange(of: draft) { stash() }
+        .onChange(of: draft) { stash(); saveError = nil }
         .confirmationDialog("Delete \(job?.name ?? "this job")?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) {
                 guard let j = job, let c = model.client else { return }
@@ -93,6 +94,10 @@ struct JobDetail: View {
                     TextField("Schedule", text: $draft.schedule, prompt: Text("weekdays at 9am"))
                     Text("Plain English or cron: “every 2h”, “every monday 9am”, “in 30m”, “0 9 * * *”, or an ISO date.")
                         .font(.caption).foregroundStyle(.secondary)
+                    if let saveError {
+                        Label(saveError, systemImage: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.red)
+                            .lineLimit(4).textSelection(.enabled)
+                    }
                 }
                 if let j = job, j.schedule?.expr != nil || j.schedule?.kind != nil {
                     LabeledContent("Runs") { Text([j.schedule?.kind, j.schedule?.expr].compactMap { $0 }.joined(separator: " · ")).foregroundStyle(.secondary) }
@@ -170,7 +175,7 @@ struct JobDetail: View {
                 ToolbarItem { Button(role: .destructive) { confirmDelete = true } label: { Label("Delete", systemImage: "trash") }.help("Delete") }
             }
             ToolbarItem {
-                Button("Revert") { draft = job.map { HermesClient.JobDraft($0) } ?? .init() }.disabled(!dirty)
+                if !isNew { Button("Revert") { draft = job.map { HermesClient.JobDraft($0) } ?? .init() }.disabled(!dirty) }
             }
             ToolbarItem {
                 Button(isNew ? "Create" : "Save") { Task { await save() } }
@@ -229,6 +234,9 @@ struct JobDetail: View {
                 lib.creatingJob = false
                 lib.jobSelection = n.id
             }
-        } catch { model.flash("Couldn't save: \(error.localizedDescription)") }
+        } catch {
+            // Server validation text is long (it lists every accepted format): show it under the field, not in a toast.
+            saveError = error.localizedDescription
+        }
     }
 }

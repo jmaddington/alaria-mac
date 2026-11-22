@@ -168,7 +168,12 @@ final class ChatStore {
             update(replyID) { $0.streaming = false }
             if gen == streamGen { streamTask = nil; runId = nil } // a newer send may own these now
             onFinish?(failure)
-            await reload() // titles are generated server-side after the first turn
+            await reload() // titles are generated server-side after the first turn...
+            // ...a few seconds later, so look again (hermes-mac-5xc).
+            for delay in [4, 12] {
+                try? await Task.sleep(for: .seconds(delay))
+                if !isStreaming { await reload() }
+            }
         }
     }
 
@@ -184,7 +189,7 @@ final class ChatStore {
         case .approval(let a): update(id) { $0.approval = a }
         case .completed(let content): update(id) { if !content.isEmpty { $0.text = content } }
         case .failed(let msg): update(id) { $0.error = Self.readable(msg) }
-        case .cancelled: update(id) { $0.error = $0.text.isEmpty ? "Stopped" : nil }
+        case .cancelled: update(id) { $0.error = "Stopped" } // mark interrupted replies, with or without text (hermes-mac-d76)
         case .status: break
         }
     }

@@ -180,9 +180,12 @@ public final class SystemVoice: TextToSpeech, @unchecked Sendable {
 public struct OpenAIVoice: TextToSpeech {
     public var apiKey: String, model: String, voice: String, instructions: String
     public var url: URL
+    /// 1.0 = normal; OpenAI and mlx-audio both accept `speed` (0.25-4).
+    public var speed: Double
     public init(apiKey: String, model: String = "gpt-4o-mini-tts", voice: String = "onyx", instructions: String = "",
-                url: URL = URL(string: "https://api.openai.com/v1/audio/speech")!) {
+                url: URL = URL(string: "https://api.openai.com/v1/audio/speech")!, speed: Double = 1.0) {
         self.apiKey = apiKey; self.model = model; self.voice = voice; self.instructions = instructions; self.url = url
+        self.speed = speed
     }
 
     public func render(_ sentence: String) async throws -> AVAudioPCMBuffer {
@@ -191,7 +194,8 @@ public struct OpenAIVoice: TextToSpeech {
         // Local OpenAI-compatible servers (mlx-audio Kokoro, ...) usually need no key.
         if !apiKey.isEmpty { req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization") }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: String] = ["model": model, "voice": voice, "input": sentence, "response_format": "wav"]
+        var body: [String: Any] = ["model": model, "voice": voice, "input": sentence, "response_format": "wav"]
+        if abs(speed - 1) > 0.01 { body["speed"] = speed }
         if !instructions.isEmpty { body["instructions"] = instructions }
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, resp) = try await URLSession.shared.data(for: req)

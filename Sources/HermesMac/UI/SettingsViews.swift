@@ -41,34 +41,21 @@ struct ConnectionForm: View {
         .formStyle(.grouped)
     }
 
-    /// Plain http to a host that isn't this Mac, the LAN, or a tailnet sends the key readable on the wire.
-    // AIDEV-NOTE: security (hermes-mac-fkh). ATS stays permissive so http to tailnet/LAN hosts works; this is the guard.
-    static func sendsKeyInClear(_ s: String) -> Bool {
-        guard let u = URL(string: s.trimmingCharacters(in: .whitespaces)), u.scheme?.lowercased() == "http",
-              let host = u.host()?.lowercased() else { return false }
-        if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".ts.net") || host.hasSuffix(".lan") || !host.contains(".") { return false }
-        let p = host.split(separator: ".").compactMap { Int($0) }
-        if p.count == 4 {
-            switch (p[0], p[1]) {
-            case (127, _), (10, _), (192, 168), (169, 254): return false
-            case (172, 16...31): return false
-            case (100, 64...127): return false // Tailscale CGNAT range
-            default: return true
-            }
-        }
-        return true
-    }
+    static func sendsKeyInClear(_ s: String) -> Bool { ConnectionSecurity.sendsKeyInClear(s) }
     static var cleartextWarning: some View {
         Label("This sends your key unencrypted over the internet. Use https, or a Tailscale/LAN address.", systemImage: "exclamationmark.triangle.fill")
             .foregroundStyle(.orange)
     }
 
     @MainActor static func test(_ s: ConnectionSettings) async -> String {
-        guard let c = s.makeClient() else { return "Enter an API server URL and key." }
+        if ConnectionSettings.validURL(s.apiURL) == nil { return "Enter the API server URL, like http://127.0.0.1:8642." }
+        if !s.dashboardURL.isEmpty, ConnectionSettings.validURL(s.dashboardURL) == nil { return "Enter the dashboard URL, like http://127.0.0.1:9119." }
+        guard let c = s.makeClient() else { return "Enter the API key." }
         do {
             let h = try await c.health()
             _ = try await c.sessions(limit: 1)
-            var msg = "✓ API server \(h.version.map { "v\($0)" } ?? "") reachable and key accepted."
+            let v = h.version.flatMap { $0 == "unknown" || $0.isEmpty ? nil : " v\($0)" } ?? ""
+            var msg = "✓ API server\(v) reachable and key accepted."
             if c.hasDashboard {
                 do { _ = try await c.dashboardStatus(); _ = try await c.skills(); msg += " Dashboard OK." }
                 catch { return "API OK, but the dashboard failed: \(error.localizedDescription)" }
@@ -89,7 +76,9 @@ struct ConnectionPane: View {
                 if let result { Text(result).font(.callout).foregroundStyle(result.hasPrefix("✓") ? .green : .red).lineLimit(2) }
                 Spacer()
                 Button("Test") { Task { result = await ConnectionForm.test(draft) } }
-                Button("Save") { model.apply(draft); result = nil }.buttonStyle(.borderedProminent).disabled(draft == model.settings)
+                Button("Save") { model.apply(draft); result = nil }.buttonStyle(.borderedProminent)
+                    .disabled(draft == model.settings || ConnectionSettings.validURL(draft.apiURL) == nil
+                              || (!draft.dashboardURL.isEmpty && ConnectionSettings.validURL(draft.dashboardURL) == nil))
             }
             .padding(.horizontal, 20).padding(.bottom, 18)
         }
@@ -105,6 +94,7 @@ struct VoicePane: View {
     @AppStorage("voice.localURL") private var localURL = "http://127.0.0.1:8880/v1/audio/speech"
     @AppStorage("voice.localModel") private var localModel = "mlx-community/Kokoro-82M-bf16"
     @AppStorage("voice.localVoice") private var localVoice = "af_heart"
+    @AppStorage("voice.speed") private var speed: Double = 1.0
     @AppStorage("voice.sttModel") private var sttModel = "gpt-transcribe"
     @AppStorage("voice.sttPrompt") private var sttPrompt = ""
     @AppStorage("voice.bargeIn") private var bargeIn = true
@@ -135,7 +125,7 @@ struct VoicePane: View {
                             Text("\(v.name)  \(quality(v))").tag(v.identifier)
                         }
                     }
-                    Slider(value: $rate, in: 0.4...0.62) { Text("Speed") }
+                    Slider(value: $rate, in: 0.4...0.62) { Text("Speed") } minimumValueLabel: { Image(systemName: "tortoise") } maximumValueLabel: { Image(systemName: "hare") }
                     Button(previewing ? "Playing…" : "Preview") { Task { await preview() } }.disabled(previewing)
                 } else if tts == VoiceTTS.local.rawValue {
                     TextField("Server", text: $localURL, prompt: Text("http://127.0.0.1:8880/v1/audio/speech"))
@@ -144,19 +134,23 @@ struct VoicePane: View {
                         ForEach(Self.kokoroVoices, id: \.0) { Text($0.1).tag($0.0) }
                         if !Self.kokoroVoices.contains(where: { $0.0 == localVoice }) { Text(localVoice).tag(localVoice) }
                     }
+                    Slider(value: $speed, in: 0.8...1.4, step: 0.05) { Text("Speed") } minimumValueLabel: { Image(systemName: "tortoise") } maximumValueLabel: { Image(systemName: "hare") }
                     Button(previewing ? "Playing…" : "Preview") { Task { await preview() } }.disabled(previewing)
                     if let previewError { Text(previewError).font(.caption).foregroundStyle(.red) }
                 } else {
                     Picker("Voice", selection: $openaiVoice) {
                         ForEach(["alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"], id: \.self) { Text($0.capitalized).tag($0) }
                     }
+                    Slider(value: $speed, in: 0.8...1.4, step: 0.05) { Text("Speed") } minimumValueLabel: { Image(systemName: "tortoise") } maximumValueLabel: { Image(systemName: "hare") }
+                    Button(previewing ? "Playing…" : "Preview") { Task { await preview() } }.disabled(previewing || key.isEmpty)
+                    if let previewError { Text(previewError).font(.caption).foregroundStyle(.red) }
                 }
             }
             SwiftUI.Section {
                 SecureField("OpenAI API key", text: $key, prompt: Text(key.isEmpty ? "sk-…" : "Saved in Keychain")) // hermes-mac-ich
                     .onChange(of: key) { Keychain.set("openaiKey", key) }
             } footer: {
-                Text("Only needed for OpenAI transcription or voices; stored in your Keychain. On-device options keep audio on this Mac.\nLocal server: any OpenAI-compatible /v1/audio/speech, such as Kokoro via scripts/dev-tts.sh.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
+                Text("Only needed for OpenAI transcription or voices; stored in your Keychain. On-device options keep audio on this Mac.\nLocal server: any OpenAI-compatible speech server running on your Mac or network, such as Kokoro.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
             }
         }
         .formStyle(.grouped)
@@ -173,9 +167,12 @@ struct VoicePane: View {
         do {
             try audio.startPlaybackOnly()
             let line = "Hi, I'm Hermes. How can I help?"
-            let buf = tts == VoiceTTS.local.rawValue
-                ? try await VoicePrefs.localVoice().render(line)
-                : try await SystemVoice(voiceIdentifier: systemVoice.isEmpty ? nil : systemVoice, rate: Float(rate)).render(line)
+            let buf: AVAudioPCMBuffer
+            switch VoiceTTS(rawValue: tts) ?? .system {
+            case .local: buf = try await VoicePrefs.localVoice().render(line)
+            case .openai: buf = try await OpenAIVoice(apiKey: key, voice: openaiVoice, speed: speed).render(line)
+            case .system: buf = try await SystemVoice(voiceIdentifier: systemVoice.isEmpty ? nil : systemVoice, rate: Float(rate)).render(line)
+            }
             previewError = nil
             await audio.play(buf)
         } catch { previewError = error.localizedDescription }
@@ -249,7 +246,7 @@ struct ConfigPane: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text(path ?? "config.yaml").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                TextEditor(text: $yaml).font(Font(NSFont.monospacedSystemFont(ofSize: 12, weight: .regular))) // NSTextView ignores .monospaced design
+                TextEditor(text: Binding(get: { yaml }, set: { yaml = $0; model.library.configDraft = $0 == original ? nil : $0 })).font(Font(NSFont.monospacedSystemFont(ofSize: 12, weight: .regular))) // NSTextView ignores .monospaced design
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
@@ -257,10 +254,10 @@ struct ConfigPane: View {
                 HStack {
                     Text("Some changes need a gateway restart to take effect.").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("Revert") { yaml = original }.disabled(yaml == original)
+                    Button("Revert") { yaml = original; model.library.configDraft = nil }.disabled(yaml == original)
                     Button("Save") {
                         guard let c = model.client else { return }
-                        model.run("Save config") { try await c.saveRawConfig(yaml); original = yaml; model.flash("Saved config.yaml") }
+                        model.run("Save config") { try await c.saveRawConfig(yaml); original = yaml; model.library.configDraft = nil; model.flash("Saved config.yaml") }
                     }.buttonStyle(.borderedProminent).disabled(yaml == original)
                 }
             }
@@ -274,7 +271,8 @@ struct ConfigPane: View {
         loadError = nil
         do {
             let r = try await c.rawConfig()
-            yaml = r.yaml; original = r.yaml; path = r.path; loaded = true
+            original = r.yaml; path = r.path; loaded = true
+            yaml = model.library.configDraft ?? r.yaml // resume unsaved edits
         } catch { loadError = error.localizedDescription }
     }
 }

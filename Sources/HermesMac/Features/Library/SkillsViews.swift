@@ -73,12 +73,17 @@ struct SkillsList: View {
 }
 
 struct SkillRow: View {
+    @Environment(AppModel.self) private var model
     var skill: Skill
     var body: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(skill.name).font(.body.weight(.medium)).lineLimit(1)
+                    // Unsaved draft marker, so pending edits can be found again from the list (hermes-mac-e82).
+                    if model.library.skillDrafts[skill.name] != nil {
+                        Circle().fill(.orange).frame(width: 6, height: 6).help("Unsaved changes").accessibilityLabel("Unsaved changes")
+                    }
                     if skill.locked == true { Image(systemName: "lock.fill").font(.caption2).foregroundStyle(.secondary) }
                 }
                 Text(skill.description ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(2)

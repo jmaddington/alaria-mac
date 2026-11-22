@@ -23,6 +23,8 @@ struct VoicePrefs {
     @MainActor static var sttPrompt: String { UserDefaults.standard.string(forKey: "voice.sttPrompt") ?? "" }
     @MainActor static var rate: Float { Float((UserDefaults.standard.object(forKey: "voice.rate") as? NSNumber)?.doubleValue ?? 0.52) } // stored as Double by @AppStorage (hermes-mac-jgg)
     static var openAIKey: String? { Keychain.get("openaiKey") }
+    /// Speed multiplier for the network/local engines (system voice uses `rate`) (hermes-mac-8l8).
+    @MainActor static var speed: Double { (UserDefaults.standard.object(forKey: "voice.speed") as? NSNumber)?.doubleValue ?? 1.0 }
     // Local OpenAI-compatible TTS (scripts/dev-tts.sh runs mlx-audio + Kokoro on :8880).
     @MainActor static var localTTSURL: String { UserDefaults.standard.string(forKey: "voice.localURL") ?? "http://127.0.0.1:8880/v1/audio/speech" }
     @MainActor static var localTTSModel: String { UserDefaults.standard.string(forKey: "voice.localModel") ?? "mlx-community/Kokoro-82M-bf16" }
@@ -31,7 +33,7 @@ struct VoicePrefs {
         guard let u = URL(string: localTTSURL), u.scheme?.hasPrefix("http") == true else {
             throw STTError(message: "Set a valid local speech server URL in Settings › Voice.")
         }
-        return OpenAIVoice(apiKey: "", model: localTTSModel, voice: localTTSVoice, url: u)
+        return OpenAIVoice(apiKey: "", model: localTTSModel, voice: localTTSVoice, url: u, speed: speed)
     }
 }
 
@@ -196,7 +198,7 @@ final class VoiceController {
         case .local: tts = try VoicePrefs.localVoice()
         case .openai:
             guard let k = VoicePrefs.openAIKey, !k.isEmpty else { throw STTError(message: "Add an OpenAI key in Settings › Voice, or use a system voice.") }
-            tts = OpenAIVoice(apiKey: k, voice: VoicePrefs.openAIVoice)
+            tts = OpenAIVoice(apiKey: k, voice: VoicePrefs.openAIVoice, speed: VoicePrefs.speed)
         }
     }
 

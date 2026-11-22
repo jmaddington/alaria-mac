@@ -134,7 +134,10 @@ struct SessionRow: View {
                 if session.pinned == true { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.orange) }
                 Text(session.displayTitle).font(.body.weight(.medium)).lineLimit(1)
                 Spacer(minLength: 4)
-                Text(session.activityDate.relative).font(.caption).foregroundStyle(.tertiary)
+                // Ticks every minute; the list itself only reloads on demand (hermes-mac-1d5).
+                TimelineView(.periodic(from: .now, by: 60)) { _ in
+                    Text(session.activityDate.relative).font(.caption).foregroundStyle(.tertiary)
+                }
             }
             HStack(spacing: 6) {
                 if let src = session.source, src != "api_server", src != "desktop" { Pill(text: src) }
@@ -257,6 +260,17 @@ struct Greeting: View {
 }
 
 struct EntryView: View {
+    /// While streaming, a trailing "27" or "27." is the start of the next list item; showing it as a paragraph
+    /// made the last line flicker between layouts (hermes-mac-d76).
+    static func holdBackPartialMarker(_ t: String) -> String {
+        guard let nl = t.lastIndex(of: "\n") else { return t }
+        let tail = t[t.index(after: nl)...].trimmingCharacters(in: .whitespaces)
+        let partial = !tail.isEmpty && tail.count <= 4
+            && (tail.allSatisfy(\.isNumber) || (tail.dropLast().allSatisfy(\.isNumber) && ".)".contains(tail.last!)) || tail == "-" || tail == "*")
+        return partial ? String(t[..<nl]) : t
+    }
+    /// After a stop, drop a dangling marker left at the end ("6").
+    static func trimDanglingMarker(_ t: String) -> String { holdBackPartialMarker(t) }
     @Environment(AppModel.self) private var model
     var entry: ChatEntry
     @ViewState private var showThinking = false
@@ -286,9 +300,11 @@ struct EntryView: View {
                 }
                 if !entry.tools.isEmpty { ToolChips(tools: entry.tools) }
                 if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
-                if !entry.text.isEmpty { MarkdownView(text: entry.text) }
+                if !entry.text.isEmpty { MarkdownView(text: entry.streaming ? Self.holdBackPartialMarker(entry.text) : Self.trimDanglingMarker(entry.text)) }
                 else if entry.streaming && entry.thinking.isEmpty && entry.tools.isEmpty { TypingIndicator() }
-                if let err = entry.error {
+                if entry.error == "Stopped" {
+                    Label("Stopped", systemImage: "stop.circle").font(.caption).foregroundStyle(.secondary)
+                } else if let err = entry.error {
                     Label(err, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
                 }
             }

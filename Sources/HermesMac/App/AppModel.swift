@@ -71,11 +71,18 @@ struct ConnectionSettings: Equatable {
         return a && b
     }
 
-    var isConfigured: Bool { URL(string: apiURL) != nil && !apiKey.isEmpty }
+    var isConfigured: Bool { Self.validURL(apiURL) != nil && !apiKey.isEmpty }
+
+    /// http(s) URL with a host; "localhost:8642" or "not a url" are rejected instead of failing later (hermes-mac-as0).
+    static func validURL(_ s: String) -> URL? {
+        guard let u = URL(string: s.trimmingCharacters(in: .whitespaces)), let scheme = u.scheme?.lowercased(),
+              scheme == "http" || scheme == "https", let h = u.host(), !h.isEmpty else { return nil }
+        return u
+    }
 
     func makeClient() -> HermesClient? {
-        guard let a = URL(string: apiURL), !apiKey.isEmpty else { return nil }
-        let dash = URL(string: dashboardURL).flatMap { u in
+        guard let a = Self.validURL(apiURL), !apiKey.isEmpty else { return nil }
+        let dash = Self.validURL(dashboardURL).flatMap { u in
             dashboardToken.isEmpty ? nil : Endpoint(baseURL: u, token: dashboardToken, headerName: "X-Hermes-Session-Token")
         }
         return HermesClient(api: Endpoint(baseURL: a, token: apiKey, headerName: "Authorization"), dashboard: dash)
