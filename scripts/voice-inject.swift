@@ -1,6 +1,6 @@
 // Feeds an audio file into a running Hermes voice mode in place of the microphone (test harness).
 // The app must be launched with HERMES_VOICE_TEST=1 and be in voice mode:
-//   open --env HERMES_VOICE_TEST=1 build/Hermes.app
+//   open --env HERMES_VOICE_TEST=1 build/Talaria.app
 //   say -o /tmp/q.aiff "What is the capital of France?"
 //   swift scripts/voice-inject.swift /tmp/q.aiff
 import Foundation

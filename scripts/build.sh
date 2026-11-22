@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build Hermes.app (SwiftPM -> bundle -> signed).
+# Build Talaria.app (SwiftPM -> bundle -> signed). Talaria is a Mac client for Hermes Agent.
 #   VERSION=0.2.0 BUILD=2 ./scripts/build.sh
 #   HERMES_SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" ./scripts/build.sh
 set -euo pipefail
@@ -15,10 +15,10 @@ if ! LOG=$(swift build -c "$CONFIG" --arch arm64 --product HermesMac 2>&1); then
 fi
 BIN="$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)/HermesMac"
 
-APP=build/Hermes.app
+APP=build/Talaria.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Hermes"
+cp "$BIN" "$APP/Contents/MacOS/Talaria"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
 

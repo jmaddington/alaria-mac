@@ -1,3 +1,4 @@
+import AppKit
 import HermesKit
 import SwiftUI
 
@@ -139,8 +140,8 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 HermesMark(size: 64)
-                Text("Welcome to Hermes").font(.largeTitle.weight(.semibold))
-                Text("Connect to your Hermes agent. You'll find the keys in your Hermes home's .env file.")
+                Text("Welcome to Talaria").font(.largeTitle.weight(.semibold))
+                Text("Connect Talaria to your Hermes agent. You'll find the keys in your Hermes home's .env file.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
             }
             .padding(.top, 34).padding(.bottom, 24)
@@ -166,20 +167,14 @@ struct OnboardingView: View {
 }
 
 /// The Hermes mark: a winged-sandal-free abstraction - two stacked arcs suggesting a messenger in motion.
+/// The app's mark: the app icon itself (a winged-sandal wing, drawn by scripts/make-icon.swift).
 struct HermesMark: View {
     var size: CGFloat
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
-                .fill(LinearGradient(colors: [Color(red: 0.42, green: 0.45, blue: 1.0), Color(red: 0.22, green: 0.20, blue: 0.62)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-            Image(systemName: "paperplane.fill")
-                .font(.system(size: size * 0.42, weight: .semibold))
-                .foregroundStyle(.white)
-                .rotationEffect(.degrees(-8))
-                .offset(x: -size * 0.02)
-        }
-        .frame(width: size, height: size)
-        .shadow(color: Theme.accent.opacity(0.35), radius: size * 0.12, y: size * 0.06)
+        Image(nsImage: NSApp.applicationIconImage)
+            .resizable().interpolation(.high)
+            .frame(width: size * 1.25, height: size * 1.25) // the icon art carries its own inset and shadow
+            .frame(width: size, height: size)
+            .accessibilityLabel("Talaria")
     }
 }

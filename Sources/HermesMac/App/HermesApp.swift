@@ -7,7 +7,7 @@ struct HermesApp: App {
     @ViewState private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("Hermes", id: "main") {
+        WindowGroup("Talaria", id: "main") {
             RootView()
                 .environment(model)
                 .frame(minWidth: 940, minHeight: 600)
