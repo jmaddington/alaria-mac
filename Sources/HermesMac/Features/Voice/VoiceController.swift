@@ -325,6 +325,7 @@ final class VoiceController {
             phase = .speaking
             frames.setListening(!muted && canListen)
             outputLevel = 1
+            vlog.info("speaking chars=\(clip.text.count) secs=\(Double(buf.frameLength) / buf.format.sampleRate, format: .fixed(precision: 1)) [VOX-SPEAK]")
             await audio.play(buf)
             outputLevel = 0
         }

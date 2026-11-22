@@ -62,6 +62,8 @@ func liveChecks(_ c: HermesClient) async {
     }
     await asyncCheck("live session lifecycle") {
         let s = try await c.createSession(title: "checks")
+        // Chat admission only accepts api_server/bot_room sessions (regression 2026-11-22: source=desktop -> permission_denied).
+        expect(s.source == "api_server", "session source \(s.source ?? "nil") would be refused by chat admission")
         let renamed = try await c.updateSession(s.id, title: "checks renamed", pinned: true)
         expect(renamed.title == "checks renamed" && renamed.pinned == true)
         let list = try await c.sessions()

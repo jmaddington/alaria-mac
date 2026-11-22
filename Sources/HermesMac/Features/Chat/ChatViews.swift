@@ -6,6 +6,7 @@ import SwiftUI
 struct SessionList: View {
     @Environment(AppModel.self) private var model
     @ViewState private var renaming: HermesSession?
+    @ViewState private var deleting: HermesSession?
     @ViewState private var newTitle = ""
 
     private var chats: ChatStore { model.chats }
@@ -54,6 +55,13 @@ struct SessionList: View {
             ToolbarItem { Button { chats.newChat() } label: { Label("New Chat", systemImage: "square.and.pencil") }.help("New Chat (⌘N)") }
         }
         .refreshable { await chats.reload() }
+        // Server-side delete has no undo, so confirm (Messages does the same).
+        .confirmationDialog("Delete “\(deleting?.title ?? "this chat")”?",
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { if let d = deleting { chats.delete(d) }; deleting = nil }
+            Button("Cancel", role: .cancel) { deleting = nil }
+        } message: { Text("This removes the conversation from Hermes for good. Archive keeps it out of the way instead.") }
         .alert("Rename Chat", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Title", text: $newTitle)
             Button("Rename") { if let r = renaming { chats.rename(r, to: newTitle) }; renaming = nil }
@@ -67,7 +75,7 @@ struct SessionList: View {
         Button("Duplicate") { chats.fork(s) }
         Divider()
         Button("Archive") { chats.archive(s) }
-        Button("Delete", role: .destructive) { chats.delete(s) }
+        Button("Delete…", role: .destructive) { deleting = s }
     }
 
     private var groups: [(title: String, items: [HermesSession])] {

@@ -1,3 +1,4 @@
+import AppKit
 import AVFAudio
 import HermesKit
 import SwiftUI
@@ -126,7 +127,7 @@ struct VoicePane: View {
             SwiftUI.Section {
                 SecureField("OpenAI API key", text: $key).onChange(of: key) { Keychain.set("openaiKey", key) }
             } footer: {
-                Text("Only needed for OpenAI transcription or voices. Local server: any OpenAI-compatible /v1/audio/speech, e.g. Kokoro via scripts/dev-tts.sh. Stored in your Keychain. On-device options keep audio on this Mac.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
+                Text("Only needed for OpenAI transcription or voices; stored in your Keychain. On-device options keep audio on this Mac.\nLocal server: any OpenAI-compatible /v1/audio/speech, such as Kokoro via scripts/dev-tts.sh.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
             }
         }
         .formStyle(.grouped)
@@ -163,7 +164,7 @@ struct ModelPane: View {
         Form {
             SwiftUI.Section("Current") {
                 LabeledContent("Model") { Text(info?.model ?? "—").textSelection(.enabled) }
-                LabeledContent("Provider") { Text(info?.provider ?? "—") }
+                LabeledContent("Provider") { Text(info?.provider.map { p in providers.first { $0.slug == p }?.name ?? p } ?? "—") }
                 if let c = info?.effectiveContextLength { LabeledContent("Context") { Text("\(c.compact) tokens") } }
             }
             SwiftUI.Section {
@@ -202,7 +203,7 @@ struct ConfigPane: View {
                 Text("Connect the dashboard to edit config.yaml.").foregroundStyle(.secondary).padding()
             } else {
                 Text(path ?? "config.yaml").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-                TextEditor(text: $yaml).font(.system(size: 12, design: .monospaced))
+                TextEditor(text: $yaml).font(Font(NSFont.monospacedSystemFont(ofSize: 12, weight: .regular))) // NSTextView ignores .monospaced design
                     .scrollContentBackground(.hidden)
                     .padding(8)
                     .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))

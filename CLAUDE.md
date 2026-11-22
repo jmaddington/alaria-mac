@@ -59,7 +59,14 @@ swift run hermes-checks                 # unit checks + live API checks (if dev/
 HERMES_CHECK_CHAT=1 swift run hermes-checks   # + one real streamed chat turn (slow on local models)
 HERMES_CHECK_VOICE=1 swift run hermes-checks  # + offline TTS -> VAD -> on-device STT round trip
 HERMES_SRC=/path/to/hermes-agent ./scripts/dev-hermes.sh   # local Hermes (:8642 + :9119) on LM Studio
+./scripts/dev-tts.sh                    # local Kokoro TTS (mlx-audio) on :8880; Settings > Voice > Local server
 ```
+
+GUI testing (see docs/agents/gui-testing.md): launch with `open` (not the binary directly) so Hermes owns its
+mic/TCC prompts; capture only the Hermes window (`screencapture -l <id>`), never the full screen (user's
+other windows). Voice harness: `open --env HERMES_VOICE_TEST=1 build/Hermes.app`, enter voice mode (Opt-Cmd-V),
+then `swift scripts/voice-inject.swift q.aiff` feeds a file in place of the mic; verify via
+`/usr/bin/log show --predicate 'subsystem == "net.jmaddington.hermes"'` grep `VOX-HEARD` / `VOX-SPEAK`.
 
 Launch the built app against the dev server (seeds the Keychain on first run):
 `set -a; source dev/hermes-home/.env; set +a; HERMES_API_KEY=$API_SERVER_KEY HERMES_DASHBOARD_TOKEN=$HERMES_DASHBOARD_SESSION_TOKEN build/Hermes.app/Contents/MacOS/Hermes`
