@@ -23,16 +23,44 @@ struct ConnectionForm: View {
                 TextField("URL", text: $draft.apiURL, prompt: Text("http://127.0.0.1:8642"))
                 SecureField("API key", text: $draft.apiKey, prompt: Text("API_SERVER_KEY"))
             } header: { Text("API Server") } footer: {
-                Text("Chats, sessions and scheduled jobs. Runs inside `hermes gateway`; the key is API_SERVER_KEY.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Chats, sessions and scheduled jobs. Runs inside `hermes gateway`; the key is API_SERVER_KEY.")
+                    if Self.sendsKeyInClear(draft.apiURL) { Self.cleartextWarning }
+                }
             }
             SwiftUI.Section {
                 TextField("URL", text: $draft.dashboardURL, prompt: Text("http://127.0.0.1:9119"))
                 SecureField("Session token", text: $draft.dashboardToken, prompt: Text("HERMES_DASHBOARD_SESSION_TOKEN"))
             } header: { Text("Dashboard (optional)") } footer: {
-                Text("Unlocks skills editing, search, tools, memory, usage and logs. Start it with `hermes serve` or `hermes dashboard` and set HERMES_DASHBOARD_SESSION_TOKEN.")
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Unlocks skills editing, search, tools, memory, usage and logs. Start it with `hermes serve` or `hermes dashboard` and set HERMES_DASHBOARD_SESSION_TOKEN.")
+                    if Self.sendsKeyInClear(draft.dashboardURL) { Self.cleartextWarning }
+                }
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Plain http to a host that isn't this Mac, the LAN, or a tailnet sends the key readable on the wire.
+    // AIDEV-NOTE: security (hermes-mac-fkh). ATS stays permissive so http to tailnet/LAN hosts works; this is the guard.
+    static func sendsKeyInClear(_ s: String) -> Bool {
+        guard let u = URL(string: s.trimmingCharacters(in: .whitespaces)), u.scheme?.lowercased() == "http",
+              let host = u.host()?.lowercased() else { return false }
+        if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".ts.net") || host.hasSuffix(".lan") || !host.contains(".") { return false }
+        let p = host.split(separator: ".").compactMap { Int($0) }
+        if p.count == 4 {
+            switch (p[0], p[1]) {
+            case (127, _), (10, _), (192, 168), (169, 254): return false
+            case (172, 16...31): return false
+            case (100, 64...127): return false // Tailscale CGNAT range
+            default: return true
+            }
+        }
+        return true
+    }
+    static var cleartextWarning: some View {
+        Label("This sends your key unencrypted over the internet. Use https, or a Tailscale/LAN address.", systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.orange)
     }
 
     @MainActor static func test(_ s: ConnectionSettings) async -> String {
@@ -125,7 +153,8 @@ struct VoicePane: View {
                 }
             }
             SwiftUI.Section {
-                SecureField("OpenAI API key", text: $key).onChange(of: key) { Keychain.set("openaiKey", key) }
+                SecureField("OpenAI API key", text: $key, prompt: Text(key.isEmpty ? "sk-…" : "Saved in Keychain")) // hermes-mac-ich
+                    .onChange(of: key) { Keychain.set("openaiKey", key) }
             } footer: {
                 Text("Only needed for OpenAI transcription or voices; stored in your Keychain. On-device options keep audio on this Mac.\nLocal server: any OpenAI-compatible /v1/audio/speech, such as Kokoro via scripts/dev-tts.sh.\nTip: download Premium voices in System Settings › Accessibility › Spoken Content.")
             }
@@ -142,7 +171,7 @@ struct VoicePane: View {
         previewing = true; defer { previewing = false }
         let audio = VoiceAudio()
         do {
-            try audio.start(voiceProcessing: false)
+            try audio.startPlaybackOnly()
             let line = "Hi, I'm Hermes. How can I help?"
             let buf = tts == VoiceTTS.local.rawValue
                 ? try await VoicePrefs.localVoice().render(line)
@@ -171,6 +200,11 @@ struct ModelPane: View {
                 Picker("Provider", selection: $provider) {
                     ForEach(providers.filter { $0.authenticated == true || $0.isCurrent == true || !$0.modelIDs.isEmpty }) { Text($0.name ?? $0.slug).tag($0.slug) }
                 }
+                // A new provider never keeps the old provider's model id (hermes-mac-mg9).
+                .onChange(of: provider) { old, new in
+                    guard !old.isEmpty, old != new else { return }
+                    modelID = providers.first { $0.slug == new }?.modelIDs.first ?? ""
+                }
                 let ids = providers.first { $0.slug == provider }?.modelIDs ?? []
                 if ids.isEmpty { TextField("Model", text: $modelID) }
                 else { Picker("Model", selection: $modelID) { ForEach(ids, id: \.self) { Text($0).tag($0) } } }
@@ -184,10 +218,12 @@ struct ModelPane: View {
         .formStyle(.grouped)
         .task {
             guard let c = model.client else { return }
-            info = try? await c.modelInfo()
-            providers = (try? await c.modelOptions()) ?? []
-            provider = providers.first { $0.isCurrent == true }?.slug ?? info?.provider ?? ""
+            do {
+                info = try await c.modelInfo()
+                providers = try await c.modelOptions()
+            } catch { model.report("Couldn't load models", error) }
             modelID = info?.model ?? ""
+            provider = providers.first { $0.isCurrent == true }?.slug ?? info?.provider ?? ""
         }
     }
 }
@@ -197,10 +233,20 @@ struct ConfigPane: View {
     @ViewState private var yaml = ""
     @ViewState private var original = ""
     @ViewState private var path: String?
+    /// Editing (and Save) only after a successful load: an empty buffer saved over config.yaml wipes it (hermes-mac-vp6).
+    @ViewState private var loaded = false
+    @ViewState private var loadError: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if model.client?.hasDashboard != true {
                 Text("Connect the dashboard to edit config.yaml.").foregroundStyle(.secondary).padding()
+            } else if let loadError {
+                VStack(spacing: 12) {
+                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load config.yaml", message: loadError)
+                    Button("Try Again") { Task { await load() } }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !loaded {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text(path ?? "config.yaml").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 TextEditor(text: $yaml).font(Font(NSFont.monospacedSystemFont(ofSize: 12, weight: .regular))) // NSTextView ignores .monospaced design
@@ -220,9 +266,15 @@ struct ConfigPane: View {
             }
         }
         .padding(20)
-        .task {
-            guard let c = model.client, c.hasDashboard, let r = try? await c.rawConfig() else { return }
-            yaml = r.yaml; original = r.yaml; path = r.path
-        }
+        .task(id: model.client?.hasDashboard) { await load() }
+    }
+
+    private func load() async {
+        guard let c = model.client, c.hasDashboard else { return }
+        loadError = nil
+        do {
+            let r = try await c.rawConfig()
+            yaml = r.yaml; original = r.yaml; path = r.path; loaded = true
+        } catch { loadError = error.localizedDescription }
     }
 }

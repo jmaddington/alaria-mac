@@ -58,14 +58,14 @@ struct Sidebar: View {
         List(selection: $model.section) {
             SwiftUI.Section {
                 ForEach([Section.chats, .skills, .scheduled]) { s in
-                    Label(s.title, systemImage: s.symbol).tag(s)
+                    Label(s.title, systemImage: s.symbol).hoverRow().tag(s)
                 }
             }
             SwiftUI.Section("Agent") {
-                ForEach([Section.tools, .memory]) { s in Label(s.title, systemImage: s.symbol).tag(s) }
+                ForEach([Section.tools, .memory]) { s in Label(s.title, systemImage: s.symbol).hoverRow().tag(s) }
             }
             SwiftUI.Section("Insight") {
-                ForEach([Section.usage, .logs]) { s in Label(s.title, systemImage: s.symbol).tag(s) }
+                ForEach([Section.usage, .logs]) { s in Label(s.title, systemImage: s.symbol).hoverRow().tag(s) }
             }
         }
         .listStyle(.sidebar)

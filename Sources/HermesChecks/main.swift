@@ -1,5 +1,5 @@
 import Foundation
-@testable import HermesKit
+import HermesKit
 
 // Minimal check runner (see Package.swift note). Each check is a named closure; failures are collected.
 nonisolated(unsafe) var failures: [String] = []
@@ -44,6 +44,8 @@ check("sentence splitter") {
 }
 
 runAPIChecks()
+runMarkdownChecks()
+runSplitterChecks()
 runVoiceChecks()
 
 if failures.isEmpty { print("All checks passed") } else { failures.forEach { print("FAIL", $0) }; exit(1) }

@@ -6,6 +6,7 @@ import SwiftUI
 ///   Space              = mute,  Esc = end voice mode
 struct VoiceOverlay: View {
     @Environment(AppModel.self) private var model
+    @FocusState private var focused: Bool
     private var voice: VoiceController { model.voice }
 
     var body: some View {
@@ -53,7 +54,14 @@ struct VoiceOverlay: View {
         .onKeyPress(.escape) { voice.stop(); return .handled }
         .onKeyPress(.space) { voice.toggleMute(); return .handled }
         .focusable()
+        .focused($focused)
         .focusEffectDisabled()
+        // Take keyboard focus from the composer, or Esc/Space never reach the overlay (hermes-mac-6w3).
+        .onAppear { focused = true }
+        .background {
+            // Esc ends voice mode even if focus is somewhere else.
+            Button("End Voice Mode") { voice.stop() }.keyboardShortcut(.cancelAction).hidden()
+        }
         .environment(\.colorScheme, .dark)
     }
 

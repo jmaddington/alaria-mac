@@ -6,7 +6,7 @@ struct JobsList: View {
     var body: some View {
         @Bindable var lib = model.library
         List(selection: $lib.jobSelection) {
-            ForEach(lib.jobs) { j in JobRow(job: j).tag(Optional(j.id)) }
+            ForEach(lib.jobs) { j in JobRow(job: j).hoverRow().tag(Optional(j.id)) }
         }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
@@ -75,7 +75,8 @@ struct JobDetail: View {
         }
         .navigationTitle(isNew ? "New Job" : job?.name ?? "Scheduled")
         .onChange(of: job?.id, initial: true) { reset() }
-        .onChange(of: lib.creatingJob) { if lib.creatingJob { draft = .init(); loadedID = nil } }
+        .onChange(of: lib.creatingJob) { if lib.creatingJob { draft = lib.jobDrafts["new"] ?? .init(); loadedID = nil } }
+        .onChange(of: draft) { stash() }
         .confirmationDialog("Delete \(job?.name ?? "this job")?", isPresented: $confirmDelete) {
             Button("Delete", role: .destructive) {
                 guard let j = job, let c = model.client else { return }
@@ -98,8 +99,8 @@ struct JobDetail: View {
                 }
             }
             SwiftUI.Section("Prompt") {
-                TextEditor(text: $draft.prompt)
-                    .font(.body).frame(minHeight: 140)
+                TextEditor(text: $draft.prompt) // capped so a long prompt scrolls inside instead of growing the form
+                    .font(.body).frame(minHeight: 140, maxHeight: 320)
                     .scrollContentBackground(.hidden)
             }
             SwiftUI.Section("Options") {
@@ -113,6 +114,7 @@ struct JobDetail: View {
                                 HStack(spacing: 3) {
                                     Text(s).font(.caption)
                                     Button { draft.skills.removeAll { $0 == s } } label: { Image(systemName: "xmark").font(.system(size: 8, weight: .bold)) }.buttonStyle(.plain)
+                                        .accessibilityLabel("Remove \(s)")
                                 }
                                 .padding(.horizontal, 7).padding(.vertical, 3).background(Capsule().fill(Theme.accentSoft))
                             }
@@ -124,7 +126,10 @@ struct JobDetail: View {
                 }
                 Picker("Repeat", selection: Binding(get: { draft.repeatTimes ?? 0 }, set: { draft.repeatTimes = $0 == 0 ? nil : $0 })) {
                     Text("Forever").tag(0)
-                    ForEach([1, 2, 3, 5, 10, 25], id: \.self) { Text("\($0) time\($0 == 1 ? "" : "s")").tag($0) }
+                    // Include the job's own count so an unusual value (e.g. 4) isn't a blank, invalid selection (hermes-mac-coe).
+                    ForEach(Array(Set([1, 2, 3, 5, 10, 25] + [draft.repeatTimes ?? 1])).sorted(), id: \.self) {
+                        Text("\($0) time\($0 == 1 ? "" : "s")").tag($0)
+                    }
                 }
                 TextField("Time zone", text: Binding(get: { draft.timezone ?? "" }, set: { draft.timezone = $0 }), prompt: Text("Hermes default"))
             }
@@ -132,7 +137,7 @@ struct JobDetail: View {
                 SwiftUI.Section("Status") {
                     LabeledContent("State") { Text(j.isPaused ? "Paused" : "Scheduled").foregroundStyle(j.isPaused ? .secondary : .primary) }
                     if let r = j.pausedReason, j.isPaused { LabeledContent("Reason") { Text(r).foregroundStyle(.secondary) } }
-                    LabeledContent("Next run") { Text(date(j.nextRunAt)) }
+                    LabeledContent("Next run") { Text(j.isPaused ? "Paused" : date(j.nextRunAt)) }
                     LabeledContent("Last run") { Text(date(j.lastRunAt)) }
                     if let s = j.lastStatus { LabeledContent("Last result") { Text(s.capitalized).foregroundStyle(s == "ok" || s == "success" ? .green : .orange) } }
                     if let e = j.lastError { Text(e).font(.callout).foregroundStyle(.red).textSelection(.enabled) }
@@ -165,6 +170,9 @@ struct JobDetail: View {
                 ToolbarItem { Button(role: .destructive) { confirmDelete = true } label: { Label("Delete", systemImage: "trash") }.help("Delete") }
             }
             ToolbarItem {
+                Button("Revert") { draft = job.map { HermesClient.JobDraft($0) } ?? .init() }.disabled(!dirty)
+            }
+            ToolbarItem {
                 Button(isNew ? "Create" : "Save") { Task { await save() } }
                     .buttonStyle(.borderedProminent).keyboardShortcut("s")
                     .disabled(!dirty || saving || draft.name.isEmpty || draft.schedule.isEmpty)
@@ -186,12 +194,19 @@ struct JobDetail: View {
 
     private func reset() {
         guard let j = job else { return }
-        if loadedID != j.id { draft = .init(j); loadedID = j.id; runs = [] }
+        if loadedID != j.id { draft = lib.jobDrafts[j.id] ?? .init(j); loadedID = j.id; runs = [] }
+    }
+
+    /// Keep unsaved form edits per job across navigation (hermes-mac-fz5).
+    private func stash() {
+        let key = isNew ? "new" : loadedID
+        guard let key else { return }
+        lib.jobDrafts[key] = dirty ? draft : nil
     }
 
     private func loadRuns() async {
         guard let j = job, let c = model.client, c.hasDashboard else { return }
-        runs = (try? await c.jobRuns(j.id)) ?? []
+        do { runs = try await c.jobRuns(j.id) } catch { model.report("Couldn't load run history", error) }
     }
 
     private func act(_ what: String, _ f: @escaping (HermesClient) async throws -> CronJob) {
@@ -204,12 +219,13 @@ struct JobDetail: View {
         saving = true; defer { saving = false }
         do {
             if let j = job {
-                let u = try await c.updateJob(j.id, draft)
-                lib.replace(u); draft = .init(u)
+                let u = try await c.updateJob(j.id, draft, from: HermesClient.JobDraft(j))
+                lib.replace(u); lib.jobDrafts[j.id] = nil; draft = .init(u)
                 model.flash("Saved")
             } else {
                 let n = try await c.createJob(draft)
                 lib.replace(n)
+                lib.jobDrafts["new"] = nil
                 lib.creatingJob = false
                 lib.jobSelection = n.id
             }

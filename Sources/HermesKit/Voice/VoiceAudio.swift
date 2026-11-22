@@ -47,6 +47,18 @@ public final class VoiceAudio: @unchecked Sendable {
 
     public init() {}
 
+    /// Playback only: no input tap, so no mic indicator or permission prompt (Settings voice preview) (hermes-mac-ev9).
+    public func startPlaybackOnly() throws {
+        engine.attach(player)
+        engine.attach(tonePlayer)
+        engine.connect(player, to: engine.mainMixerNode, format: playbackFormat)
+        engine.connect(tonePlayer, to: engine.mainMixerNode, format: playbackFormat)
+        engine.prepare()
+        try engine.start()
+        playbackOnly = true
+    }
+    private var playbackOnly = false
+
     public func start(voiceProcessing: Bool) throws {
         // AIDEV-NOTE: build the output graph BEFORE enabling voice processing. Enabling VP first makes the
         // output AU fail kAUInitialize (-10875) on MacBook Pro mic arrays (verified 2026-11-22, macOS 27.2).
@@ -94,7 +106,7 @@ public final class VoiceAudio: @unchecked Sendable {
     public func stop() {
         if let o = configObserver { NotificationCenter.default.removeObserver(o) }
         configObserver = nil
-        engine.inputNode.removeTap(onBus: 0)
+        if !playbackOnly { engine.inputNode.removeTap(onBus: 0) } // touching inputNode would create the mic unit
         player.stop(); tonePlayer.stop()
         engine.stop()
         if echoCancelling { try? engine.inputNode.setVoiceProcessingEnabled(false) }

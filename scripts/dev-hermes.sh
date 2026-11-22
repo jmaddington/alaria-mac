@@ -15,9 +15,11 @@ SESSION=hermes-dev
 
 if [[ ${1:-} == stop ]]; then tmux kill-session -t $SESSION 2>/dev/null && echo "stopped"; exit 0; fi
 
-# Local fixes for upstream bugs (see patches/). Applied once; skipped if already in the checkout.
+# Local fixes for upstream bugs (see patches/). Applied once (this modifies $SRC's working tree).
 for p in "$ROOT"/patches/hermes-agent-*.patch(N); do
-  if git -C "$SRC" apply --check "$p" 2>/dev/null; then git -C "$SRC" apply "$p" && echo "applied $(basename $p)"; fi
+  if git -C "$SRC" apply --check "$p" 2>/dev/null; then git -C "$SRC" apply "$p" && echo "applied $(basename $p) to $SRC"
+  elif git -C "$SRC" apply --reverse --check "$p" 2>/dev/null; then :   # already applied
+  else echo "WARNING: $(basename $p) does not apply to $SRC (checkout drifted?); starting UNPATCHED" >&2; fi
 done
 
 mkdir -p "$HOME_DIR"; chmod 700 "$HOME_DIR"
@@ -44,6 +46,13 @@ EOF
 
 set -a; source "$HOME_DIR/.env"; set +a
 tmux kill-session -t $SESSION 2>/dev/null || true
+sleep 1
+# Refuse to "succeed" against someone else's server (e.g. a real ~/.hermes instance) on our ports.
+for port in 8642 9119; do
+  if lsof -nP -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "Port $port is already in use by another process; stop it first (lsof -nP -iTCP:$port -sTCP:LISTEN)." >&2; exit 1
+  fi
+done
 ENVS=(-e HERMES_HOME="$HOME_DIR" -e API_SERVER_KEY="$API_SERVER_KEY" -e HERMES_DASHBOARD_SESSION_TOKEN="$HERMES_DASHBOARD_SESSION_TOKEN")
 tmux new-session -d -s $SESSION -n gateway "${ENVS[@]}" "$SRC/venv/bin/hermes gateway 2>&1 | tee $HOME_DIR/gateway.out"
 tmux new-window -t $SESSION -n dashboard "${ENVS[@]}" "$SRC/venv/bin/hermes dashboard --no-open --port 9119 2>&1 | tee $HOME_DIR/dashboard.out"

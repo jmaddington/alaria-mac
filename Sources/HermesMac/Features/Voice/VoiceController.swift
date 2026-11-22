@@ -21,7 +21,7 @@ struct VoicePrefs {
     @MainActor static var openAIVoice: String { UserDefaults.standard.string(forKey: "voice.openaiVoice") ?? "onyx" }
     @MainActor static var sttModel: String { UserDefaults.standard.string(forKey: "voice.sttModel") ?? "gpt-transcribe" }
     @MainActor static var sttPrompt: String { UserDefaults.standard.string(forKey: "voice.sttPrompt") ?? "" }
-    @MainActor static var rate: Float { UserDefaults.standard.object(forKey: "voice.rate") as? Float ?? 0.52 }
+    @MainActor static var rate: Float { Float((UserDefaults.standard.object(forKey: "voice.rate") as? NSNumber)?.doubleValue ?? 0.52) } // stored as Double by @AppStorage (hermes-mac-jgg)
     static var openAIKey: String? { Keychain.get("openaiKey") }
     // Local OpenAI-compatible TTS (scripts/dev-tts.sh runs mlx-audio + Kokoro on :8880).
     @MainActor static var localTTSURL: String { UserDefaults.standard.string(forKey: "voice.localURL") ?? "http://127.0.0.1:8880/v1/audio/speech" }
@@ -48,7 +48,8 @@ final class FrameProcessor: @unchecked Sendable {
     private var levelTick = 0
 
     func setListening(_ on: Bool) {
-        lock.withLock { listening = on; if !on { vad.reset(); utterance.removeAll() } }
+        // Drop the pre-roll too, or audio from before a mute rides along with the next utterance (hermes-mac-aqn).
+        lock.withLock { listening = on; if !on { vad.reset(); utterance.removeAll(); preroll.removeAll() } }
     }
 
     /// "Send now": ends the current utterance immediately instead of waiting for 1.1 s of silence.
@@ -113,7 +114,10 @@ final class VoiceController {
         guard phase == .off else { return }
         phase = .starting
         Task {
-            guard await AVCaptureDevice.requestAccess(for: .audio) else {
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            // Esc during the permission prompt ends voice mode; don't start the mic afterwards (hermes-mac-sug).
+            guard phase == .starting else { return }
+            guard granted else {
                 phase = .error("Microphone access is off. Turn it on in System Settings › Privacy & Security › Microphone.")
                 return
             }
@@ -257,18 +261,30 @@ final class VoiceController {
             heard = text
             vlog.info("heard words=\(text.split(separator: " ").count) [VOX-HEARD]")
             guard let chats = app?.chats else { return }
-            if chats.isStreaming, let run = chats.runId, let client = app?.client {
+            if chats.isStreaming, let client = app?.client {
                 // Hermes is still working: fold the words into the running turn instead of dropping them.
-                do {
-                    try await client.steer(run, text: text)
-                    phase = .thinking
+                // The run id arrives with run.started, a moment after the turn begins; wait for it (hermes-mac-d31).
+                var run = chats.runId
+                for _ in 0..<100 where run == nil && chats.isStreaming {
+                    try await Task.sleep(for: .milliseconds(100)); run = chats.runId
+                }
+                if let run {
+                    do {
+                        try await client.steer(run, text: text)
+                        phase = .thinking
+                        return
+                    } catch {
+                        // Steer races the run's end (409 "not accepting steer input"): send it as the next turn.
+                        vlog.info("steer refused, sending as next turn: \(error.localizedDescription, privacy: .public) [VOX-STEER-FALLBACK]")
+                    }
+                }
+                for _ in 0..<300 where chats.isStreaming { try await Task.sleep(for: .milliseconds(100)) }
+                guard !chats.isStreaming else {
+                    // Never lose what was said silently (hermes-mac-mwp).
+                    vlog.error("turn still running after 30 s; utterance not sent [VOX-STEER-GIVEUP]")
+                    app?.flash("Hermes is still busy, so this wasn't sent: “\(text)”")
+                    Earcon.nothingUsable.play(on: audio)
                     return
-                } catch {
-                    // Steer races the run's end (409 "not accepting steer input"); never drop what was said:
-                    // wait for the turn to close, then send it as the next turn.
-                    vlog.info("steer refused, sending as next turn: \(error.localizedDescription, privacy: .public) [VOX-STEER-FALLBACK]")
-                    for _ in 0..<100 where chats.isStreaming { try await Task.sleep(for: .milliseconds(100)) }
-                    guard !chats.isStreaming else { throw error }
                 }
             }
             phase = .thinking
@@ -296,7 +312,8 @@ final class VoiceController {
     private func enqueue(_ sentences: [String]) {
         guard !sentences.isEmpty else { return }
         queue.append(contentsOf: sentences)
-        if !pumping { Task { await pump() } }
+        // Claim the pump synchronously: two enqueues in one main-actor turn must not start two pumps (hermes-mac-4b9).
+        if !pumping { pumping = true; Task { await pump() } }
     }
 
     /// Plays sentences strictly one at a time, rendering the next while the current one plays.
@@ -335,8 +352,12 @@ final class VoiceController {
     /// Returns to listening (or thinking, if the turn is still streaming).
     private func settle() {
         guard audio != nil else { return }
-        if app?.chats.isStreaming == true { phase = .thinking; startTicking() } else { phase = .listening; tickTask?.cancel() }
-        frames.setListening(!muted)
+        let moreComing = app?.chats.isStreaming == true
+        if moreComing { phase = .thinking; startTicking() }
+        else { phase = .listening; tickTask?.cancel(); heard = "" } // the turn is over: don't leave the old question up (hermes-mac-x1l)
+        // Without echo cancellation the mic stays closed between sentences of a reply still streaming, or the speaker
+        // tail opens the VAD (hermes-mac-jc6). With AEC it stays open so speaking can steer.
+        frames.setListening(!muted && (moreComing ? (audio?.echoCancelling ?? false) : true))
     }
 
     private func startTicking() {

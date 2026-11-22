@@ -1,8 +1,11 @@
 import Foundation
+import os
 import HermesKit
 import Observation
 import Security
 import SwiftUI
+
+private let keychainLog = Logger(subsystem: "net.jmaddington.hermes", category: "keychain")
 
 enum Keychain {
     static let service = "net.jmaddington.hermes"
@@ -13,13 +16,23 @@ enum Keychain {
         guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let d = out as? Data else { return nil }
         return String(data: d, encoding: .utf8)
     }
-    static func set(_ account: String, _ value: String?) {
+    /// Update-or-add, so a failed write never deletes the old secret first; returns false on failure (hermes-mac-azh).
+    @discardableResult
+    static func set(_ account: String, _ value: String?) -> Bool {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account]
-        SecItemDelete(q as CFDictionary)
-        guard let value, !value.isEmpty else { return }
-        var add = q; add[kSecValueData as String] = Data(value.utf8)
-        SecItemAdd(add as CFDictionary, nil)
+        guard let value, !value.isEmpty else {
+            let st = SecItemDelete(q as CFDictionary)
+            return st == errSecSuccess || st == errSecItemNotFound
+        }
+        let data = Data(value.utf8)
+        var st = SecItemUpdate(q as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+        if st == errSecItemNotFound {
+            var add = q; add[kSecValueData as String] = data
+            st = SecItemAdd(add as CFDictionary, nil)
+        }
+        if st != errSecSuccess { keychainLog.error("keychain write \(account, privacy: .public) failed status=\(st) [KEYCHAIN-WRITE-ERR]") }
+        return st == errSecSuccess
     }
 }
 
@@ -48,11 +61,14 @@ struct ConnectionSettings: Equatable {
         return s
     }
 
-    func save() {
+    /// Returns false if a secret couldn't be stored in the Keychain.
+    @discardableResult
+    func save() -> Bool {
         UserDefaults.standard.set(apiURL, forKey: "apiURL")
         UserDefaults.standard.set(dashboardURL, forKey: "dashboardURL")
-        Keychain.set("apiKey", apiKey)
-        Keychain.set("dashboardToken", dashboardToken)
+        let a = Keychain.set("apiKey", apiKey)
+        let b = Keychain.set("dashboardToken", dashboardToken)
+        return a && b
     }
 
     var isConfigured: Bool { URL(string: apiURL) != nil && !apiKey.isEmpty }
@@ -124,26 +140,71 @@ final class AppModel {
     }
 
     func apply(_ s: ConnectionSettings) {
+        let serverChanged = s.apiURL != settings.apiURL || s.dashboardURL != settings.dashboardURL
         settings = s
-        s.save()
+        if !s.save() { flash("Couldn't save the key to your Keychain. It will be forgotten when Hermes quits.") }
+        if serverChanged { resetServerState() } // never send to a session id that only existed on the old server
         connect()
     }
 
+    private var connectTask: Task<Void, Never>?
+    private var monitorTask: Task<Void, Never>?
+
+    /// (Re)connects. Cancels an in-flight connect so an older health result can't overwrite a newer one, and
+    /// starts a monitor: every 15 s a dropped server turns the badge red and a failed one is retried (hermes-mac-1b9).
     func connect() {
+        connectTask?.cancel()
         client = settings.makeClient()
         guard let client else { connection = .unconfigured; return }
         connection = .connecting
-        Task {
+        connectTask = Task {
             do {
                 let h = try await client.health()
+                guard !Task.isCancelled else { return }
                 connection = .connected(version: h.version == "unknown" ? nil : h.version)
                 await chats.reload()
                 await library.loadJobs()
                 await library.loadSkills()
             } catch {
+                guard !Task.isCancelled else { return }
                 connection = .failed(error.localizedDescription)
             }
         }
+        if monitorTask == nil { monitorTask = Task { await monitor() } }
+    }
+
+    private func monitor() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(15))
+            guard let client else { continue }
+            switch connection {
+            case .failed: connect() // auto-retry; connect() keeps this monitor
+            case .connected:
+                do { _ = try await client.health() }
+                catch { if case .connected = connection { connection = .failed(error.localizedDescription) } }
+            default: break
+            }
+        }
+    }
+
+    func reloadCurrent() {
+        if case .failed = connection { connect(); return }
+        Task {
+            switch section ?? .chats {
+            case .chats: await chats.reload()
+            case .skills: await library.loadSkills()
+            case .scheduled: await library.loadJobs()
+            case .tools: await library.loadToolsets()
+            case .memory: await library.loadMemory()
+            case .usage, .logs: break // these panes poll / reload on their own
+            }
+        }
+    }
+
+    private func resetServerState() {
+        chats.newChat()
+        chats.sessions = []
+        library.reset()
     }
 
     func flash(_ message: String) {
@@ -154,7 +215,23 @@ final class AppModel {
     /// Runs an action and surfaces failures as a toast instead of swallowing them.
     func run(_ what: String, _ body: @escaping () async throws -> Void) {
         Task {
-            do { try await body() } catch { flash("\(what): \(error.localizedDescription)") }
+            do { try await body() } catch { report(what, error) }
         }
+    }
+
+    /// Flashes a failure unless it's just a cancelled request (re-selection cancels .task loads) (hermes-mac-r6c).
+    func report(_ what: String, _ error: Error) {
+        guard !error.isCancellation else { return }
+        flash("\(what): \(error.localizedDescription)")
+    }
+}
+
+
+extension Error {
+    /// Task cancellation or a URLSession request cancelled underneath it.
+    var isCancellation: Bool {
+        if self is CancellationError { return true }
+        let ns = self as NSError
+        return ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled
     }
 }

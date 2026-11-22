@@ -15,17 +15,22 @@ struct ToolsList: View {
                     ForEach(lib.toolsets) { t in
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(t.label ?? t.name).font(.body.weight(.medium))
+                                HStack(spacing: 6) {
+                                    Text(t.label ?? t.name).font(.body.weight(.medium))
+                                    // Unavailable on this host is not the same as switched off (hermes-mac-eqx).
+                                    if t.available == false { Pill(text: "Unavailable") }
+                                }
                                 Text(t.description ?? "").font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                                    .help(t.description ?? "")
                             }
                             Spacer()
-                            Toggle("", isOn: Binding(get: { t.enabled ?? false }, set: { v in
+                            Toggle(t.label ?? t.name, isOn: Binding(get: { t.enabled ?? false }, set: { v in
                                 guard let c = model.client else { return }
                                 model.run("Toolset") { try await c.setToolset(t.name, enabled: v); await lib.loadToolsets() }
                             })).toggleStyle(.switch).controlSize(.mini).labelsHidden()
                         }
-                        .opacity(t.available == false ? 0.5 : 1)
-                        .tag(Optional(t.name))
+                        .opacity(t.available == false ? 0.55 : (t.enabled == false ? 0.8 : 1))
+                        .hoverRow().tag(Optional(t.name))
                     }
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)
@@ -52,7 +57,7 @@ struct ToolDetail: View {
                     if t.configured == false { Label("Needs setup on the Hermes host", systemImage: "exclamationmark.triangle").foregroundStyle(.orange) }
                     if t.available == false { Label("Not available on this host", systemImage: "nosign").foregroundStyle(.secondary) }
                 } footer: { Text(t.description ?? "") }
-                SwiftUI.Section("\(t.tools?.count ?? 0) tools") {
+                SwiftUI.Section({ let n = t.tools?.count ?? 0; return "\(n) tool\(n == 1 ? "" : "s")" }()) {
                     ForEach(t.tools ?? [], id: \.self) { name in
                         Label(name, systemImage: "function").font(.system(.body, design: .monospaced))
                     }
@@ -77,31 +82,48 @@ struct MemoryList: View {
             else {
                 List(selection: $lib.memorySelection) {
                     SwiftUI.Section("Built-in") {
-                        Label("Memory & Profile", systemImage: "brain.head.profile").tag(Optional("builtin"))
+                        Label("Memory & Profile", systemImage: "brain.head.profile").hoverRow().tag(Optional("builtin"))
                     }
                     SwiftUI.Section("Providers") {
                         ForEach(lib.memory?.providers ?? []) { p in
                             HStack {
-                                Text(p.name.capitalized)
+                                Text(Self.providerName(p.name)).help(p.description ?? "")
                                 Spacer()
                                 if lib.memory?.active == p.name { Pill(text: "Active", color: .green) }
-                                else if p.available == false { Pill(text: "Unavailable") }
+                                else if p.available == false {
+                                    Pill(text: "Unavailable").help(p.status ?? "Not installed or not configured on the Hermes host")
+                                }
                             }
-                            .tag(Optional(p.name))
+                            .hoverRow().tag(Optional(p.name))
                         }
                     }
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)
                 .task { await lib.loadMemory() }
+                .onChange(of: lib.memorySelection, initial: true) { if lib.memorySelection == nil { lib.memorySelection = "builtin" } } // detail always matches a selected row
             }
         }
         .navigationTitle("Memory")
     }
+    /// Provider ids are lowercase slugs; known ones get their real names (hermes-mac-jhg).
+    static func providerName(_ id: String) -> String {
+        let known = ["retaindb": "RetainDB", "byterover": "ByteRover", "mem0": "Mem0", "honcho": "Honcho",
+                     "zep": "Zep", "letta": "Letta", "supermemory": "Supermemory"]
+        return known[id.lowercased()] ?? id.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
 }
 
 struct MemoryDetail: View {
     @Environment(AppModel.self) private var model
     @ViewState private var confirm: String?
+    private var forgetTitle: String {
+        switch confirm { case "memory": "Forget everything Hermes has remembered?"; case "user": "Forget your profile?"; default: "Forget all memories and your profile?" }
+    }
+    private var forgetButton: String {
+        switch confirm { case "memory": "Forget Memories"; case "user": "Forget Profile"; default: "Forget Everything" }
+    }
+
     var body: some View {
         let lib = model.library
         Group {
@@ -138,12 +160,14 @@ struct MemoryDetail: View {
             } else { Color.clear }
         }
         .navigationTitle("Memory")
-        .confirmationDialog("This can't be undone.", isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } })) {
-            Button("Forget", role: .destructive) {
+        // Name the scope being erased (hermes-mac-2cc).
+        .confirmationDialog(forgetTitle, isPresented: Binding(get: { confirm != nil }, set: { if !$0 { confirm = nil } }),
+                            titleVisibility: .visible) {
+            Button(forgetButton, role: .destructive) {
                 guard let t = confirm, let c = model.client else { return }
                 model.run("Reset memory") { try await c.resetMemory(t); await lib.loadMemory(); model.flash("Done") }
             }
-        }
+        } message: { Text("This can't be undone.") }
     }
 }
 
@@ -158,7 +182,7 @@ struct UsagePeriods: View {
             else {
                 List(selection: Binding(get: { Optional(lib.usageDays) }, set: { lib.usageDays = $0 ?? 7 })) {
                     ForEach([(7, "Last 7 Days"), (30, "Last 30 Days"), (90, "Last 90 Days"), (365, "Last Year")], id: \.0) { d, t in
-                        Label(t, systemImage: "calendar").tag(Optional(d))
+                        Label(t, systemImage: "calendar").hoverRow().tag(Optional(d))
                     }
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)
@@ -171,6 +195,7 @@ struct UsagePeriods: View {
 struct UsageDetail: View {
     @Environment(AppModel.self) private var model
     @ViewState private var report: UsageReport?
+    @ViewState private var usageError: String?
     private var periodStart: Date {
         Calendar.current.startOfDay(for: .now.addingTimeInterval(-Double(model.library.usageDays - 1) * 86_400))
     }
@@ -222,12 +247,17 @@ struct UsageDetail: View {
                     .padding(32)
                     .frame(maxWidth: 900, alignment: .leading)
                 }
+            } else if let usageError {
+                EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load usage", message: usageError)
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .navigationTitle("Usage")
         .task(id: model.library.usageDays) {
             guard let c = model.client, c.hasDashboard else { return }
-            do { report = try await c.usage(days: model.library.usageDays) } catch { model.flash("Couldn't load usage: \(error.localizedDescription)") }
+            report = nil // never label 30 days over 7-day numbers while loading (hermes-mac-3r6)
+            usageError = nil
+            do { report = try await c.usage(days: model.library.usageDays) }
+            catch { if !error.isCancellation { usageError = error.localizedDescription } }
         }
     }
 }
@@ -237,8 +267,11 @@ struct Stat: View {
     var value: String
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // Never wrap mid-number at narrow widths; shrink instead (hermes-mac-bax).
             Text(title).font(.caption).foregroundStyle(.secondary).textCase(.uppercase).tracking(0.4)
+                .lineLimit(1).minimumScaleFactor(0.7)
             Text(value).font(.system(size: 26, weight: .semibold, design: .rounded)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.5)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -257,7 +290,7 @@ struct LogFiles: View {
             else {
                 List(selection: Binding(get: { Optional(lib.logFile) }, set: { lib.logFile = $0 ?? "agent" })) {
                     ForEach([("agent", "Agent", "cpu"), ("errors", "Errors", "exclamationmark.octagon"), ("gateway", "Gateway", "network")], id: \.0) { f, t, s in
-                        Label(t, systemImage: s).tag(Optional(f))
+                        Label(t, systemImage: s).hoverRow().tag(Optional(f))
                     }
                 }
                 .listStyle(.inset).scrollContentBackground(.hidden)
@@ -289,7 +322,8 @@ struct LogDetail: View {
                         }
                         .padding(16)
                     }
-                    .onChange(of: lines.count) { if live { proxy.scrollTo(shown.count - 1, anchor: .bottom) } }
+                    // Key on the content, not the count: at the 400-line window the count never changes (hermes-mac-fet).
+                    .onChange(of: lines) { if live, !shown.isEmpty { proxy.scrollTo(shown.count - 1, anchor: .bottom) } }
                 }
                 .background(Color(nsColor: .textBackgroundColor))
             }
@@ -299,8 +333,17 @@ struct LogDetail: View {
         .toolbar { ToolbarItem { Toggle(isOn: $live) { Label("Follow", systemImage: "arrow.down.to.line") }.help("Follow new lines") } }
         .task(id: model.library.logFile) {
             guard let c = model.client, c.hasDashboard else { return }
+            lines = [] // never show the previous file's lines under the new file's name
+            var failed = false
             while !Task.isCancelled {
-                if live, let l = try? await c.logs(file: model.library.logFile, lines: 400) { lines = l }
+                if live {
+                    do { lines = try await c.logs(file: model.library.logFile, lines: 400); failed = false }
+                    catch {
+                        if Task.isCancelled { return }
+                        if !failed { model.flash("Couldn't read logs: \(error.localizedDescription)") } // once, not every 3 s
+                        failed = true
+                    }
+                }
                 try? await Task.sleep(for: .seconds(3))
             }
         }

@@ -1,9 +1,14 @@
 import Foundation
-@testable import HermesKit
+import HermesKit
 
 /// Unit checks for the SSE parser, plus live checks against scripts/dev-hermes.sh when dev/hermes-home/.env exists.
 /// HERMES_CHECK_CHAT=1 also runs one real streamed chat turn (slow on a local model).
 func runAPIChecks() {
+    check("url building: ids encoded once, + & = escaped in queries (hermes-mac-d80, -jcv)") {
+        let base = URL(string: "http://h:1/prefix/")!
+        let u = HTTPCore.url(base: base, path: "/api/sessions/\(HermesClient.path("a b%/c"))/messages", query: ["q": "c++ & x=1", "n": nil])
+        expect(u.absoluteString == "http://h:1/prefix/api/sessions/a%20b%25%2Fc/messages?q=c%2B%2B%20%26%20x%3D1", u.absoluteString)
+    }
     check("sse parser without blank lines (URLSession.lines drops them)") {
         var p = SSEParser()
         var frames: [SSEFrame] = []
@@ -78,12 +83,19 @@ func liveChecks(_ c: HermesClient) async {
         let j = try await c.createJob(d, paused: true)
         expect(j.isPaused)
         d.name = "checks job 2"; d.schedule = "weekdays at 9am"
-        let u = try await c.updateJob(j.id, d)
+        let u = try await c.updateJob(j.id, d, from: HermesClient.JobDraft(j))
         expect(u.name == "checks job 2" && u.schedule?.kind == "cron", "\(String(describing: u.schedule))")
         let r = try await c.resumeJob(j.id); expect(!r.isPaused, "resume")
         let p = try await c.pauseJob(j.id); expect(p.isPaused, "pause")
         _ = try await c.jobRuns(j.id)
         try await c.deleteJob(j.id)
+        // One-shot jobs: renaming must not re-send the lossy "once at ..." display as the schedule (hermes-mac-rao).
+        var o = HermesClient.JobDraft(); o.name = "checks once"; o.schedule = "30m"; o.prompt = "say hi"
+        let oj = try await c.createJob(o, paused: true)
+        var o2 = HermesClient.JobDraft(oj); o2.name = "checks once renamed"
+        let ou = try await c.updateJob(oj.id, o2, from: HermesClient.JobDraft(oj))
+        expect(ou.name == "checks once renamed", "one-shot rename")
+        try await c.deleteJob(oj.id)
         let jobsAfter = try await c.jobs(); expect(!jobsAfter.contains { $0.id == j.id })
     }
     await asyncCheck("live skills read/edit roundtrip") {

@@ -7,6 +7,7 @@ struct SessionList: View {
     @Environment(AppModel.self) private var model
     @ViewState private var renaming: HermesSession?
     @ViewState private var deleting: HermesSession?
+    @ViewState private var showArchived = false
     @ViewState private var newTitle = ""
 
     private var chats: ChatStore { model.chats }
@@ -14,6 +15,7 @@ struct SessionList: View {
     var body: some View {
         @Bindable var chats = model.chats
         let selection = Binding<String?>(get: { chats.selection }, set: { chats.select($0) })
+        ScrollViewReader { proxy in
         List(selection: selection) {
             if !chats.searchText.isEmpty && model.client?.hasDashboard == true {
                 SwiftUI.Section("Matches") {
@@ -24,7 +26,7 @@ struct SessionList: View {
                                 .font(.callout).foregroundStyle(.secondary).lineLimit(2)
                         }
                         .padding(.vertical, 3)
-                        .tag(Optional(hit.sessionId))
+                        .hoverRow().tag(Optional(hit.sessionId))
                     }
                     if chats.searchHits.isEmpty { Text("No matches").foregroundStyle(.secondary) }
                 }
@@ -32,12 +34,27 @@ struct SessionList: View {
                 ForEach(groups, id: \.title) { g in
                     SwiftUI.Section(g.title) {
                         ForEach(g.items) { s in
-                            SessionRow(session: s).tag(Optional(s.id)).contextMenu { menu(for: s) }
+                            SessionRow(session: s).hoverRow().tag(Optional(s.id)).id(s.id).contextMenu { menu(for: s) }
                         }
                     }
                 }
+                if !chats.archived.isEmpty {
+                    SwiftUI.Section(isExpanded: $showArchived) {
+                        ForEach(chats.archived) { s in
+                            SessionRow(session: s).opacity(0.7).hoverRow().tag(Optional(s.id)).id(s.id)
+                                .contextMenu { Button("Unarchive") { chats.unarchive(s) } }
+                        }
+                    } header: { Text("Archived (\(chats.archived.count))") }
+                }
             }
         }
+        .onChange(of: chats.scrollTarget) {
+            guard let t = chats.scrollTarget else { return }
+            withAnimation(.smooth) { proxy.scrollTo(t, anchor: .center) }
+            chats.scrollTarget = nil
+        }
+        }
+        .task(id: chats.sessions.count) { await chats.loadArchived() }
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .overlay {
@@ -121,11 +138,17 @@ struct SessionRow: View {
 
 struct ConversationView: View {
     @Environment(AppModel.self) private var model
+    @ViewState private var followTail = true
     private var chats: ChatStore { model.chats }
 
     var body: some View {
         VStack(spacing: 0) {
-            if chats.entries.isEmpty && !chats.loadingMessages {
+            if let err = chats.messagesError, chats.entries.isEmpty {
+                VStack(spacing: 12) {
+                    EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load this chat", message: err)
+                    Button("Try Again") { chats.retryMessages() }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if chats.entries.isEmpty && !chats.loadingMessages {
                 Greeting()
             } else {
                 ScrollViewReader { proxy in
@@ -139,8 +162,13 @@ struct ConversationView: View {
                         .frame(maxWidth: .infinity)
                     }
                     .scrollContentBackground(.hidden)
-                    .onChange(of: chats.entries.last?.text) { proxy.scrollTo("bottom", anchor: .bottom) }
-                    .onChange(of: chats.entries.count) { withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    // Follow streaming text only while the reader is at the bottom; scrolling up to read
+                    // earlier text must not be yanked back on every delta (hermes-mac-kiu).
+                    .onScrollGeometryChange(for: Bool.self) { g in
+                        g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 40
+                    } action: { _, atBottom in followTail = atBottom }
+                    .onChange(of: chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    .onChange(of: chats.entries.count) { followTail = true; withAnimation(.smooth) { proxy.scrollTo("bottom", anchor: .bottom) } }
                     .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
                 }
             }
@@ -152,7 +180,7 @@ struct ConversationView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { model.voice.start() } label: { Label("Voice", systemImage: "waveform") }
-                    .help("Voice mode (⇧⌘V)")
+                    .help("Voice mode (⌥⌘V)")
             }
         }
     }
@@ -233,7 +261,7 @@ struct EntryView: View {
                     .disclosureGroupStyle(QuietDisclosure())
                 }
                 if !entry.tools.isEmpty { ToolChips(tools: entry.tools) }
-                if let a = entry.approval { ApprovalCard(request: a) { model.chats.answer(a, $0, entry: entry.id) } }
+                if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
                 if !entry.text.isEmpty { MarkdownView(text: entry.text) }
                 else if entry.streaming && entry.thinking.isEmpty && entry.tools.isEmpty { TypingIndicator() }
                 if let err = entry.error {
@@ -276,6 +304,8 @@ struct ToolChips: View {
                     Text(t.name.replacingOccurrences(of: "_", with: " ")).font(.caption.weight(.medium))
                     if let p = t.preview, !p.isEmpty { Text(p).font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(maxWidth: 220) }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(t.name.replacingOccurrences(of: "_", with: " ")), \(t.state == .running ? "running" : t.state == .done ? "done" : "failed")")
                 .padding(.horizontal, 9).padding(.vertical, 5)
                 .background(Capsule().fill(.quaternary.opacity(0.6)))
                 .help(t.preview ?? t.name)
@@ -286,6 +316,7 @@ struct ToolChips: View {
 
 struct ApprovalCard: View {
     var request: ApprovalRequest
+    var busy = false
     var choose: (String) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -304,7 +335,9 @@ struct ApprovalCard: View {
                 // AIDEV-NOTE: security; no keyboard shortcut on approval buttons. Return sends in the composer and must
                 // never approve an agent command (security review 2026-11-21).
                 if request.choices.contains("once") { Button("Allow Once") { choose("once") }.buttonStyle(.borderedProminent) }
+                if busy { ProgressView().controlSize(.small) }
             }
+            .disabled(busy) // one answer in flight at a time
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: Theme.corner, style: .continuous).fill(.orange.opacity(0.08)))
@@ -313,8 +346,9 @@ struct ApprovalCard: View {
 }
 
 struct TypingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        TimelineView(.animation) { ctx in
+        TimelineView(.animation(paused: reduceMotion)) { ctx in
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(spacing: 5) {
                 ForEach(0..<3) { i in
@@ -324,6 +358,7 @@ struct TypingIndicator: View {
             }
         }
         .padding(.vertical, 6)
+        .accessibilityLabel("Hermes is typing")
     }
 }
 
@@ -347,17 +382,17 @@ struct Composer: View {
                 Button(action: chats.stop) {
                     Image(systemName: "stop.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical)
                 }
-                .buttonStyle(.plain).help("Stop (⌘.)")
+                .buttonStyle(.plain).help("Stop (⌘.)").accessibilityLabel("Stop responding")
             } else if chats.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Button { model.voice.start() } label: {
                     Image(systemName: "waveform.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.accent)
                 }
-                .buttonStyle(.plain).help("Voice mode (⇧⌘V)")
+                .buttonStyle(.plain).help("Voice mode (⌥⌘V)").accessibilityLabel("Start voice mode")
             } else {
                 Button(action: send) {
                     Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(Theme.accent)
                 }
-                .buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).help("Send")
+                .buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command).help("Send").accessibilityLabel("Send message")
             }
         }
         .padding(.leading, 18).padding(.trailing, 8).padding(.vertical, 7)
