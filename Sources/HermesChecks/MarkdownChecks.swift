@@ -29,3 +29,30 @@ func runMarkdownChecks() {
         expect(b == [.bullet([MDListItem(text: "a")]), .paragraph("after")], "\(b)")
     }
 }
+
+/// Voice sentence splitting for chat-style replies (hermes-mac-8fd).
+func runSplitterChecks() {
+    func split(_ text: String) -> [String] { var s = SentenceSplitter(); return s.feed(text) + s.flush() }
+    check("splitter: abbreviations don't split") {
+        let r = split("Dr. Smith said e.g. this works. Next one.")
+        expect(r == ["Dr. Smith said e.g. this works.", "Next one."], "\(r)")
+    }
+    check("splitter: numbered list items, markers stripped") {
+        let r = split("Steps:\n1. First item\n2. Second item")
+        expect(r == ["Steps:", "First item", "Second item"], "\(r)")
+    }
+    check("splitter: code fences are not read aloud") {
+        let r = split("Here you go.\n```python\nmy_var = a * b\n```\nDone.")
+        expect(r == ["Here you go.", SentenceSplitter.codeNotice, "Done."], "\(r)")
+    }
+    check("splitter: snake_case kept, emphasis underscores dropped") {
+        let r = split("Set _my_var_ to __on__ now.")
+        expect(r == ["Set my_var to on now."], "\(r)")
+    }
+    check("splitter: decimals mid-stream are not split") {
+        var s = SentenceSplitter()
+        let a = s.feed("Pi is about 3.")
+        let b = s.feed("14 today. ")
+        expect(a.isEmpty && b == ["Pi is about 3.14 today."], "\(a) \(b)")
+    }
+}

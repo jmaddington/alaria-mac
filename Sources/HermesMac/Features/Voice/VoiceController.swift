@@ -114,7 +114,10 @@ final class VoiceController {
         guard phase == .off else { return }
         phase = .starting
         Task {
-            guard await AVCaptureDevice.requestAccess(for: .audio) else {
+            let granted = await AVCaptureDevice.requestAccess(for: .audio)
+            // Esc during the permission prompt ends voice mode; don't start the mic afterwards (hermes-mac-sug).
+            guard phase == .starting else { return }
+            guard granted else {
                 phase = .error("Microphone access is off. Turn it on in System Settings › Privacy & Security › Microphone.")
                 return
             }
@@ -349,8 +352,11 @@ final class VoiceController {
     /// Returns to listening (or thinking, if the turn is still streaming).
     private func settle() {
         guard audio != nil else { return }
-        if app?.chats.isStreaming == true { phase = .thinking; startTicking() } else { phase = .listening; tickTask?.cancel() }
-        frames.setListening(!muted)
+        let moreComing = app?.chats.isStreaming == true
+        if moreComing { phase = .thinking; startTicking() } else { phase = .listening; tickTask?.cancel() }
+        // Without echo cancellation the mic stays closed between sentences of a reply still streaming, or the speaker
+        // tail opens the VAD (hermes-mac-jc6). With AEC it stays open so speaking can steer.
+        frames.setListening(!muted && (moreComing ? (audio?.echoCancelling ?? false) : true))
     }
 
     private func startTicking() {

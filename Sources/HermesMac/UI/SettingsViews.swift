@@ -143,7 +143,7 @@ struct VoicePane: View {
         previewing = true; defer { previewing = false }
         let audio = VoiceAudio()
         do {
-            try audio.start(voiceProcessing: false)
+            try audio.startPlaybackOnly()
             let line = "Hi, I'm Hermes. How can I help?"
             let buf = tts == VoiceTTS.local.rawValue
                 ? try await VoicePrefs.localVoice().render(line)

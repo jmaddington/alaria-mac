@@ -64,7 +64,11 @@ public func isNoiseTranscript(_ text: String, prompt: String) -> Bool {
 /// and strips markdown so the voice doesn't read "asterisk".
 public struct SentenceSplitter: Sendable {
     private var buffer = ""
+    private var inCode = false
     public init() {}
+
+    /// Said once per fenced code block instead of reading code aloud.
+    public static let codeNotice = "I've put the code on screen."
 
     /// Feed a delta; returns any complete sentences.
     public mutating func feed(_ delta: String) -> [String] {
@@ -73,27 +77,54 @@ public struct SentenceSplitter: Sendable {
         while let r = nextBoundary(in: buffer) {
             let s = String(buffer[..<r.lowerBound])
             buffer = String(buffer[r.upperBound...])
-            if let c = Self.clean(s) { out.append(c) }
+            if let c = take(s) { out.append(c) }
         }
         return out
     }
 
     /// Whatever is left at end of stream.
     public mutating func flush() -> [String] {
-        defer { buffer = "" }
-        return Self.clean(buffer).map { [$0] } ?? []
+        defer { buffer = ""; inCode = false }
+        return take(buffer).map { [$0] } ?? []
     }
+
+    /// Code fences toggle a skip mode: their contents are never spoken (hermes-mac-8fd).
+    private mutating func take(_ segment: String) -> String? {
+        let t = segment.trimmingCharacters(in: .whitespaces)
+        if t.hasPrefix("```") || t.hasPrefix("~~~") {
+            inCode.toggle()
+            return inCode ? Self.codeNotice : nil
+        }
+        return inCode ? nil : Self.clean(segment)
+    }
+
+    // AIDEV-NOTE: diverges from drive-mode's plain regex on purpose (chat replies have lists, abbreviations, code).
+    private static let abbreviations: Set<String> = ["dr", "mr", "mrs", "ms", "st", "vs", "etc", "e.g", "i.e", "no", "fig", "approx", "jr", "sr", "inc", "ltd"]
 
     private func nextBoundary(in s: String) -> Range<String.Index>? {
         // Sentence end followed by whitespace, or any newline run. Needs the trailing whitespace to have
         // arrived, so "3." in "3.5" mid-stream is never split early.
-        s.range(of: #"(?<=[.!?])\s+|\n+"#, options: .regularExpression)
+        var from = s.startIndex
+        while let r = s.range(of: #"(?<=[.!?])[ \t]+|\n+"#, options: .regularExpression, range: from..<s.endIndex) {
+            if s[r].contains("\n") { return r }
+            // The word before the period: skip abbreviations ("Dr.", "e.g.") and list numbers ("1.").
+            let head = s[..<r.lowerBound]
+            let word = head.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "(" }).last.map(String.init) ?? ""
+            let bare = word.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            let lineStart = head.lastIndex(of: "\n").map { head.index(after: $0) } ?? head.startIndex
+            let isListNumber = word.dropLast().allSatisfy(\.isNumber) && head[lineStart...].trimmingCharacters(in: .whitespaces) == word
+            if word.hasSuffix(".") && (Self.abbreviations.contains(bare) || isListNumber) { from = r.upperBound; continue }
+            return r
+        }
+        return nil
     }
 
     public static func clean(_ s: String) -> String? {
         var t = s.replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
-        t = t.replacingOccurrences(of: #"[*_`#>|]"#, with: "", options: .regularExpression)
-        t = t.replacingOccurrences(of: #"^\s*[-•]\s+"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"[*`#>|]"#, with: "", options: .regularExpression)
+        // Underscores only as emphasis markers; keep snake_case and URLs intact.
+        t = t.replacingOccurrences(of: #"(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"^\s*(?:[-•+]|\d{1,3}[.)])\s+"#, with: "", options: .regularExpression)
         t = t.trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
     }
