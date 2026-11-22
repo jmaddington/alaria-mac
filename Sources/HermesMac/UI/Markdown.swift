@@ -18,9 +18,13 @@ enum Markdown {
         var reveal: [(AttributedString.Index, String)] = []
         for run in a.runs {
             guard let url = run.link, let host = url.host()?.lowercased() else { continue }
-            let text = String(a[run.range].characters).lowercased()
+            // Exact matches only: a substring test is bypassable ("paypal.com (not evil.com)") (security review).
+            let text = String(a[run.range].characters).trimmingCharacters(in: .whitespaces).lowercased()
             let bareHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
-            if !text.contains(bareHost) { reveal.append((run.range.upperBound, " (\(bareHost))")) }
+            let url_ = url.absoluteString.lowercased()
+            let honest: Set<String> = [url_, url_.hasSuffix("/") ? String(url_.dropLast()) : url_ + "/", host, bareHost, "www." + bareHost,
+                                       url.scheme.map { url_.replacingOccurrences(of: $0 + "://", with: "") } ?? url_]
+            if !honest.contains(text) { reveal.append((run.range.upperBound, " (\(bareHost))")) }
         }
         for (at, label) in reveal.reversed() {
             var tag = AttributedString(label); tag.foregroundColor = .secondary
