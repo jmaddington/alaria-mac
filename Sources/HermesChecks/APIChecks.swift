@@ -19,6 +19,15 @@ func runAPIChecks() {
         expect(frames.map(\.event) == ["run.started", "assistant.delta", "done"], "\(frames.map(\.event))")
         expect(frames.first?.object?["run_id"] as? String == "r1")
     }
+    check("sse: a frame is delivered at its blank line, not held for the next event (hermes-mac-bhv)") {
+        var lines = SSELineSplitter(), p = SSEParser()
+        var frames: [SSEFrame] = []
+        for b in Array("event: approval.request\r\ndata: {\"request_id\":\"q\"}\r\n\r\n".utf8) {
+            if let l = lines.push(b), let f = p.feed(l) { frames.append(f) }
+        }
+        expect(frames.map(\.event) == ["approval.request"], "\(frames.map(\.event))")
+        expect(frames.first?.object?["request_id"] as? String == "q")
+    }
     check("sse parser plain data frames") {
         var p = SSEParser()
         var n = 0

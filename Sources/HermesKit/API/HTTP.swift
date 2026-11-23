@@ -161,9 +161,13 @@ public final class HTTPCore: Sendable {
                         throw HermesError.from(status: http.statusCode, data: d)
                     }
                     var parser = SSEParser()
-                    for try await line in bytes.lines {
-                        if let f = parser.feed(line) { cont.yield(f) }
+                    var lines = SSELineSplitter()
+                    // AIDEV-NOTE: not bytes.lines: it drops blank lines, so a frame followed by silence (an
+                    // approval.request waiting on the user) was held until the next event. hermes-mac-bhv.
+                    for try await b in bytes {
+                        if let line = lines.push(b), let f = parser.feed(line) { cont.yield(f) }
                     }
+                    if let line = lines.finish(), let f = parser.feed(line) { cont.yield(f) }
                     if let f = parser.feed("") { cont.yield(f) }
                     cont.finish()
                 } catch {
@@ -180,6 +184,22 @@ public struct SSEFrame: Sendable {
     public var data: Data
     public func decode<T: Decodable>(_ t: T.Type) -> T? { try? HTTPCore.decoder.decode(T.self, from: data) }
     public var object: [String: Any]? { (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] }
+}
+
+/// Splits a byte stream into lines on LF, keeping empty lines (SSE frame separators). CR is left for SSEParser.
+public struct SSELineSplitter: Sendable {
+    var buf: [UInt8] = []
+    public init() {}
+    public mutating func push(_ b: UInt8) -> String? {
+        guard b == 0x0A else { buf.append(b); return nil }
+        defer { buf.removeAll(keepingCapacity: true) }
+        return String(decoding: buf, as: UTF8.self)
+    }
+    public mutating func finish() -> String? {
+        guard !buf.isEmpty else { return nil }
+        defer { buf.removeAll() }
+        return String(decoding: buf, as: UTF8.self)
+    }
 }
 
 /// Line-oriented SSE parser. NOTE: URLSession's `bytes.lines` drops empty lines, so a frame is also
