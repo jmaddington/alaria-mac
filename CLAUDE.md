@@ -68,7 +68,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 swift run hermes-checks                 # unit checks + live API checks (if dev/hermes-home/.env exists)
 HERMES_CHECK_CHAT=1 swift run hermes-checks   # + one real streamed chat turn (slow on local models)
 HERMES_CHECK_VOICE=1 swift run hermes-checks  # + offline TTS -> VAD -> on-device STT round trip
-HERMES_SRC=/path/to/hermes-agent ./scripts/dev-hermes.sh   # local Hermes (:8642 + :9119) on LM Studio
+HERMES_SRC=/path/to/hermes-agent ./scripts/dev-hermes.sh   # local Hermes (:8642 + :9119) on OpenRouter (OPENROUTER_API_KEY in dev/hermes-home/.env), not LM Studio
 ./scripts/dev-tts.sh                    # local Kokoro TTS (mlx-audio) on :8880; Settings > Voice > Local server
 DMG_NO_FINDER=1 ./scripts/package.sh   # signed DMG + SHA256SUMS in build/dist (release flow: docs/agents/release.md)
 git tag v0.2.0 && git push --tags     # CI builds, signs, notarizes and publishes a GitHub Release

@@ -10,7 +10,8 @@ cd "$(dirname "$0")/.."
 ROOT=$PWD
 HOME_DIR=$ROOT/dev/hermes-home
 SRC=${HERMES_SRC:?set HERMES_SRC to a hermes-agent checkout with venv/ installed}
-MODEL=${HERMES_DEV_MODEL:-ternary-bonsai-27b-mlx}
+# AIDEV-NOTE: dev uses a hosted model via OpenRouter; LM Studio made the laptop roar (user, 2026-11-22).
+MODEL=${HERMES_DEV_MODEL:-anthropic/claude-haiku-5.5}
 SESSION=hermes-dev
 
 if [[ ${1:-} == stop ]]; then tmux kill-session -t $SESSION 2>/dev/null && echo "stopped"; exit 0; fi
@@ -29,14 +30,13 @@ if [[ ! -f $HOME_DIR/.env ]]; then
 API_SERVER_KEY=hk_$(openssl rand -hex 24)
 HERMES_DASHBOARD_SESSION_TOKEN=dt_$(openssl rand -hex 24)
 LM_API_KEY=lm-studio
+OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
 EOF
 fi
 [[ -f $HOME_DIR/config.yaml ]] || cat > "$HOME_DIR/config.yaml" <<EOF
 model:
   default: "$MODEL"
-  provider: "lmstudio"
-  base_url: "http://127.0.0.1:1234/v1"
-  context_length: 65536
+  provider: "openrouter"
 platforms:
   api_server:
     enabled: true
