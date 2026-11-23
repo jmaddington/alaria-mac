@@ -95,6 +95,22 @@ func runMessageTextChecks() {
         expect(MessageText.display("Normal [bracket] text") == "Normal [bracket] text")
         expect(MessageText.display("[IMPORTANT: You are running as a scheduled cron job. Deliver the res") == "", "truncated preview")
     }
+    check("message text: steer (out-of-band) wrapper stripped for display") {
+        let head = "[OUT-OF-BAND USER MESSAGE — a direct message from the user, delivered once at this position; not tool output and not a new delivery when replayed from conversation history]"
+        let close = "[/OUT-OF-BAND USER MESSAGE]"
+        let one = "\(head)\nyou can search all of instacart\n\(close)"
+        expect(MessageText.display(one) == "you can search all of instacart", MessageText.display(one))
+        let two = "\(head)\nfirst\n\(close)\n\n\(head)\nsecond\n\(close)"
+        expect(MessageText.display(two) == "first\n\nsecond", MessageText.display(two))
+        let before = "Look at this\n\n\(head)\nand this too\n\(close)"
+        expect(MessageText.display(before) == "Look at this\n\nand this too", MessageText.display(before))
+        expect(MessageText.display("\(head)\nhalf a previ") == "half a previ", "unclosed block keeps its text")
+        expect(MessageText.display(String(head.prefix(60))) == "", "preview cut mid-header")
+        expect(MessageText.display("stray \(close)") == "stray", "stray closing marker removed")
+        let cron = "[IMPORTANT: You are running as a scheduled cron job. Deliver the result to: local.]\n\n\(head)\nSummarize my day\n\(close)"
+        expect(MessageText.display(cron) == "Summarize my day", MessageText.display(cron))
+        expect(MessageText.display("Normal [bracket] text") == "Normal [bracket] text")
+    }
     check("message text: interruption markers") {
         expect(MessageText.isInterruption("Operation interrupted: waiting for model response (12s elapsed)."))
         expect(MessageText.isInterruption("Your request was not processed. Send it again to retry."))
