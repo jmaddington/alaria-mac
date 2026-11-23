@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import HermesKit
 import os
 import SwiftUI
@@ -37,6 +38,27 @@ final class SameHostRedirects: NSObject, URLSessionTaskDelegate {
         }
         return request
     }
+}
+
+// AIDEV-NOTE: security. A small file can declare huge dimensions (decompression bomb), so the byte cap alone
+// doesn't bound memory: read the pixel size first, refuse > 100 MP, and decode a thumbnail capped at 4096 px.
+// Same rule as talaria-ios decodeBounded (2026-11-22).
+func decodeBounded(_ data: Data, maxPixels: Int = 100_000_000, maxSide: Int = 4096) throws -> NSImage {
+    guard let src = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceGetCount(src) > 0,
+          let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+          let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int, w > 0, h > 0
+    else { throw AttachmentError(message: "That isn't an image this Mac can show.") }
+    guard w.multipliedReportingOverflow(by: h).overflow == false, w * h <= maxPixels else {
+        imgLog.error("image refused: \(w)x\(h) exceeds pixel limit [ALR-IMG-BOMB]")
+        throw AttachmentError(message: "The image is too large to show (\(w)×\(h)).")
+    }
+    let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                 kCGImageSourceCreateThumbnailWithTransform: true,
+                                 kCGImageSourceThumbnailMaxPixelSize: min(maxSide, max(w, h))]
+    guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else {
+        throw AttachmentError(message: "That isn't an image this Mac can show.")
+    }
+    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
 }
 
 enum ReplyImageLoader {
@@ -114,12 +136,10 @@ enum ReplyImageLoader {
             }
             (mime, data) = (http.mimeType ?? "image/png", d)
         }
-        let image = try await Task.detached(priority: .userInitiated) { () throws -> NSImage in
-            guard let img = NSImage(data: data), img.isValid else { throw AttachmentError(message: "That isn't an image this Mac can show.") }
-            return img
-        }.value
+        let image = try await Task.detached(priority: .userInitiated) { try decodeBounded(data) }.value
         let loaded = LoadedImage(image: image, data: data, mime: mime.hasPrefix("image/") ? mime : "image/png")
-        cache.setObject(Box(loaded), forKey: key, cost: data.count)
+        let px = image.representations.first.map { $0.pixelsWide * $0.pixelsHigh } ?? data.count / 4
+        cache.setObject(Box(loaded), forKey: key, cost: max(data.count, px * 4)) // price decoded pixels, not bytes
         imgLog.debug("loaded \(String(describing: ref).prefix(40), privacy: .public) \(data.count) bytes [ALR-IMG-LOAD]")
         return loaded
     }
