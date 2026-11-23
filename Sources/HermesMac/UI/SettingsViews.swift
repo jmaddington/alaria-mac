@@ -10,6 +10,7 @@ struct SettingsView: View {
         TabView(selection: $tab) {
             ConnectionPane().tabItem { Label("Connection", systemImage: "network") }.tag("connection")
             ProfilesPane().tabItem { Label("Profiles", systemImage: "person.2") }.tag("profiles")
+            ChatPane().tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.tag("chat")
             VoicePane().tabItem { Label("Voice", systemImage: "waveform") }.tag("voice")
             NotificationsPane().tabItem { Label("Notifications", systemImage: "bell.badge") }.tag("notifications")
             ModelPane().tabItem { Label("Model", systemImage: "cpu") }.tag("model")
@@ -141,6 +142,25 @@ struct ConnectionPane: View {
 
 /// Per-kind toggles + the system authorization state (bead hermes-mac-vqu). Kinds are global; cron watching
 /// follows whichever server/profile is current.
+/// Chat behaviour: what Return does while a reply is still running (busy input, like the Hermes TUI's).
+struct ChatPane: View {
+    @AppStorage(ChatStore.busyModeKey) private var busyMode = BusyInputMode.queue.rawValue
+
+    var body: some View {
+        Form {
+            SwiftUI.Section {
+                Picker("Return while Hermes is replying", selection: $busyMode) {
+                    ForEach(BusyInputMode.allCases, id: \.self) { m in Text("\(m.title)  \(BusyHint.shortcut(m))").tag(m.rawValue) }
+                }
+                .pickerStyle(.radioGroup)
+            } header: { Text("Sending while busy") } footer: {
+                Text("Queue sends your message as the next turn when this one ends (shown as Queued; you can cancel it). Steer adds your words to the running reply after its next step, text only. Stop and Send ends the running reply first. The other two are always on their shortcuts, and in the send button's menu.")
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
 struct NotificationsPane: View {
     @Environment(AppModel.self) private var model
     @AppStorage(NotificationKind.replies.defaultsKey) private var replies = true

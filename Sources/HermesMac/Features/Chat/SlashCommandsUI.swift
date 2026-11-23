@@ -108,8 +108,9 @@ struct APISlashExecutor: SlashExecutor {
         case "stop":
             if chats.isStreaming { chats.stop() } else { app.flash("Nothing is running") }
         case "steer":
-            guard let client = chats.client, let run = chats.runId else { app.flash("/steer works while Hermes is replying"); return }
-            app.run("Steer") { try await client.steer(run, text: args); app.flash("Hermes will see that after its next step") }
+            guard chats.runId != nil else { app.flash("/steer works while Hermes is replying"); return }
+            // Shown under the reply; if the run already moved past accepting steer, it goes as the next message.
+            if chats.sendBusy(args, mode: .steer) { app.flash("Hermes will see that after its next step") }
         case "approve", "deny":
             guard let e = chats.entries.last(where: { $0.approval != nil }), let a = e.approval else { app.flash("No command is waiting for approval"); return }
             let choice = c.name == "deny" ? "deny" : (args.isEmpty ? "once" : args.lowercased())

@@ -159,6 +159,7 @@ struct SessionList: View {
 }
 
 struct SessionRow: View {
+    @Environment(AppModel.self) private var model
     var session: HermesSession
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -169,9 +170,14 @@ struct SessionRow: View {
                 }
                 Text(session.displayTitle).font(.body.weight(.medium)).lineLimit(1)
                 Spacer(minLength: 4)
-                // Ticks every minute; the list itself only reloads on demand (hermes-mac-1d5).
-                TimelineView(.periodic(from: .now, by: 60)) { _ in
-                    Text(session.activityDate.relative).font(.caption).foregroundStyle(.tertiary)
+                // A reply Alaria is following (any chat, not just the open one); other clients' runs aren't visible.
+                if model.chats.runningSessions.contains(session.id) {
+                    RunningDots().help("Hermes is responding").accessibilityLabel("Responding")
+                } else {
+                    // Ticks every minute; the list itself only reloads on demand (hermes-mac-1d5).
+                    TimelineView(.periodic(from: .now, by: 60)) { _ in
+                        Text(session.activityDate.relative).font(.caption).foregroundStyle(.tertiary)
+                    }
                 }
             }
             HStack(spacing: 6) {
@@ -208,7 +214,8 @@ struct ConversationView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 26) {
-                            ForEach(chats.entries) { e in EntryView(entry: e).id(e.id) }
+                            // A queued turn's reply placeholder stays out of the transcript until its run starts.
+                            ForEach(chats.entries.filter { !($0.role == .assistant && $0.queued) }) { e in EntryView(entry: e).id(e.id) }
                             Color.clear.frame(height: 1).id("bottom")
                         }
                         .frame(maxWidth: Theme.readingWidth)
@@ -235,7 +242,7 @@ struct ConversationView: View {
                         if userScrolling && new.offset < old.offset - 1 { followTail = false }
                         else if new.gap <= 24 { followTail = true }
                     }
-                    .onChange(of: chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
+                    .onChange(of: chats.entries.last(where: \.streaming)?.text ?? chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
                     .onChange(of: chats.entries.count) {
                         followTail = true
                         proxy.scrollTo("bottom", anchor: .bottom)
@@ -343,6 +350,17 @@ struct EntryView: View {
                             .lineSpacing(3)
                             .padding(.horizontal, 15).padding(.vertical, 10)
                             .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.accentSoft))
+                            .opacity(entry.queued ? 0.6 : 1)
+                    }
+                    if entry.queued {
+                        // Sent while a reply was running; Hermes runs it next (busy input "queue").
+                        HStack(spacing: 6) {
+                            Label("Queued", systemImage: "clock").font(.caption).foregroundStyle(.secondary)
+                            Button { model.chats.cancelQueued(entry: entry.id) } label: {
+                                Image(systemName: "xmark.circle.fill").font(.caption).foregroundStyle(.tertiary)
+                            }
+                            .buttonStyle(.plain).help("Don't send this").accessibilityLabel("Cancel queued message")
+                        }
                     }
                 }
             }
@@ -367,6 +385,10 @@ struct EntryView: View {
                 if let c = entry.expiredApproval {
                     Label { Text("Approval expired, not run: ") + Text(c).font(.system(.caption, design: .monospaced)) }
                         icon: { Image(systemName: "clock.badge.xmark") }
+                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                ForEach(Array(entry.steers.enumerated()), id: \.offset) { _, t in
+                    Label { Text("Steered: ") + Text(t).italic() } icon: { Image(systemName: "arrow.turn.down.right") }
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
@@ -517,8 +539,10 @@ struct Composer: View {
         @Bindable var chats = model.chats
         let tray = chats.attachments
         // AIDEV-NOTE: attachment tray wraps the row (left unindented to keep concurrent Composer edits mergeable).
+        let hasInput = !chats.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !tray.isEmpty
         VStack(alignment: .leading, spacing: 8) {
         if !tray.isEmpty || tray.loading > 0 { AttachmentTrayView().padding(.top, 4) }
+        if chats.isStreaming && hasInput { BusyHint().padding(.leading, 6).padding(.top, 2) }
         HStack(alignment: .bottom, spacing: 10) {
             AttachButton().padding(.bottom, 5)
             TextField("Message Hermes", text: $chats.draft, axis: .vertical)
@@ -529,11 +553,27 @@ struct Composer: View {
                 .onSubmit(send) // Return sends; ⌥Return inserts a newline (native vertical TextField behavior)
                 .padding(.vertical, 6)
             if chats.isStreaming {
+                if hasInput {
+                    // Busy input: Return does the Settings default; the menu (and its shortcuts) offers the others.
+                    Menu {
+                        ForEach(BusyInputMode.allCases, id: \.self) { m in
+                            Button("\(m.title)  \(BusyHint.shortcut(m))") { send(m) }
+                        }
+                        Divider()
+                        Text("Return: \(ChatStore.defaultBusyMode.title) (change in Settings > Chat)")
+                    } label: {
+                        Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(Theme.accent)
+                    } primaryAction: { send(nil) }
+                    .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
+                    .help("\(ChatStore.defaultBusyMode.title) (Return). Click and hold for more.")
+                    .accessibilityLabel("Send while Hermes is replying")
+                    .disabled(tray.loading > 0)
+                }
                 Button(action: chats.stop) {
                     Image(systemName: "stop.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical)
                 }
                 .buttonStyle(.plain).help("Stop (⌘.)").accessibilityLabel("Stop responding")
-            } else if chats.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && tray.isEmpty {
+            } else if !hasInput {
                 Button { model.voice.start() } label: {
                     Image(systemName: "waveform.circle.fill").font(.system(size: 26)).symbolRenderingMode(.hierarchical).foregroundStyle(Theme.accent)
                 }
@@ -558,13 +598,62 @@ struct Composer: View {
         .slashCommands(focused: focused) // "/" command menu (SlashCommandsUI.swift)
         .onAppear { focused = true }
         .onChange(of: chats.selection) { focused = true }
+        .background { if chats.isStreaming { busyShortcuts } }
     }
 
-    private func send() {
+    /// Busy-input shortcuts, live only while a reply runs (when idle ⌘Return is the Send button's).
+    // AIDEV-NOTE: ⌥Return is taken (newline in the vertical TextField), so the modes sit on ⌘-chords; keep
+    // BusyHint.shortcut in sync.
+    @ViewBuilder private var busyShortcuts: some View {
+        Group {
+            Button("Steer") { send(.steer) }.keyboardShortcut(.return, modifiers: .command)
+            Button("Stop and Send") { send(.interrupt) }.keyboardShortcut(.return, modifiers: [.command, .shift])
+            Button("Queue") { send(.queue) }.keyboardShortcut(.return, modifiers: [.command, .option])
+        }
+        .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+    }
+
+    /// `busyMode` only matters while a reply runs (nil = the Settings default).
+    private func send(_ busyMode: BusyInputMode? = nil) {
         let chats = model.chats
         if SlashRouter.submit(chats.draft, chats: chats) { return } // known "/command": run it, don't send text
         guard chats.attachments.loading == 0 else { model.flash("Still preparing an attachment…"); return }
-        chats.sendRouted(chats.draft, attachments: chats.attachments.items) // @profile routing + attachments
+        chats.sendRouted(chats.draft, attachments: chats.attachments.items, busyMode: busyMode) // @profile routing + attachments
+    }
+    private func send() { send(nil) }
+}
+
+/// One line above the composer while a reply runs and something is typed: what Return will do, and the others.
+struct BusyHint: View {
+    static func shortcut(_ m: BusyInputMode) -> String {
+        switch m {
+        case .steer: return "⌘↩"
+        case .interrupt: return "⇧⌘↩"
+        case .queue: return "⌥⌘↩"
+        }
+    }
+    var body: some View {
+        let d = ChatStore.defaultBusyMode
+        let others = BusyInputMode.allCases.filter { $0 != d }.map { "\($0.title) \(Self.shortcut($0))" }
+        Text("Hermes is replying. Return: \(d.title). " + others.joined(separator: " · "))
+            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+    }
+}
+
+/// Small pulsing dots for a chat whose reply is still running (session list).
+struct RunningDots: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 15, paused: reduceMotion)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 3) {
+                ForEach(0..<3) { i in
+                    Circle().fill(Theme.accent).frame(width: 4, height: 4)
+                        .opacity(reduceMotion ? 0.8 : 0.3 + 0.7 * max(0, sin(t * 4 - Double(i) * 0.7)))
+                }
+            }
+        }
+        .frame(height: 10)
     }
 }
 
