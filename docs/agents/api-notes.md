@@ -12,7 +12,7 @@ Gotchas found on the wire:
 - `GET /v1/skills` always 500s upstream (`include_editorial` kwarg). Use dashboard `/api/skills`. Bead hermes-mac-6eg.
 - `GET /api/config/raw` returns `{yaml, path}` but `PUT` takes `{yaml_text}`.
 - Error envelopes differ: `{"error":{message,code}}` (API), `{"error":"..."}` (jobs), `{"detail":...}` (dashboard). `HermesError.from` handles all three.
-- Chat: `POST /api/sessions/{id}/chat/stream` SSE. Event names: run.started, message.started, assistant.delta,
+- Chat (legacy; the Mac app uses /v1/runs, see "Detached turns" below; iOS still streams): `POST /api/sessions/{id}/chat/stream` SSE. Event names: run.started, message.started, assistant.delta,
   tool.progress (`tool_name:"_thinking"` = reasoning), tool.started/completed/failed (no call id; matched by name),
   assistant.commentary, approval.request, assistant.completed, run.completed|failed|cancelled, error, done.
   Long `: keepalive` gaps are normal on slow local models (95 s for "pong" on Bonsai 27B 2-bit).
@@ -76,3 +76,36 @@ sessions whose source is not `api_server` or `bot_room`. Never send `source`; th
   (`preview`/`args` null), so the picture reaches clients only if the model writes `MEDIA:` or `![](url)`.
 - Client: `HermesKit/Markdown/ChatImages.swift` (parse) + `HermesMac/UI/ReplyImages.swift` (load/render). Remote
   http(s) images wait for a click unless `chat.loadRemoteImages` (tracking/exfil links); file:// is never loaded.
+
+## Detached turns: /v1/runs (verified 2026-11-22 on the dev server, bead hermes-mac-wny)
+Why: the session chat stream interrupts the agent when its SSE client disconnects (api_server.py
+`_drain_session_stream_task_on_disconnect`). A run keeps going and saves its reply with no one attached.
+- `POST /v1/runs {session_id, input}` -> 202 `{run_id, status:"started", replayed}`. `input` = string, or
+  `[{role:"user", content:[OpenAI parts]}]` (the LAST message's content is used; images work, stored like chat/stream:
+  `[Image attached at: ...]` + `[screenshot]`). Optional `Idempotency-Key` header makes retries safe (replayed:true).
+  Session model locks apply (sending no `model` keeps them; "session /model wins").
+- A run posted to a busy session is accepted the same way but `GET /v1/runs/{id}` says `queued` until it starts after
+  the current one (no `run.queued` event on this path, and EVERY run reads `queued` for a moment after the 202).
+- `GET /v1/runs/{id}` -> `{run_id, status, session_id, created_at (server clock), output, usage, runtime,
+  pending_controls:[{kind:"approval", prompt_id, execution_generation, command, description, choices}], error}`.
+  status: queued|running|waiting_for_approval|stopping|completed|failed|cancelled|interrupted (gateway restart).
+  Unknown run -> 404 `run_not_found`. Terminal statuses are kept for a while (RUN_STATUS_TTL), durable with idempotency.
+- `GET /v1/runs/{id}/events` SSE: frames are `id: <seq>` + `data: {event, run_id, timestamp, ..., seq}` with NO
+  `event:` line. Replays everything after `?last_seq=N` (or `Last-Event-ID`), from a 1000-event backlog; `: open` /
+  `: keepalive` / `: stream closed` comments; `replay.truncated {oldest_retained_seq}` if the backlog lost some.
+  The buffer is swept 300 s after the run was CREATED unless a subscriber is attached -> events 404 while status still
+  answers (poll it). Completed runs replay fully until the sweep.
+- Event names (differ from chat/stream!): `message.delta {delta}`, `message.interim {text, already_streamed}`,
+  `reasoning.available {text}` (no `_thinking` stream), `tool.started {tool, preview, tool_call_id}`,
+  `tool.completed {tool, duration, error: bool, tool_call_id, preview}`, `approval.request {prompt_id,
+  execution_generation, command, description, choices}`, `approval.settled {prompt_id}`, `run.steered`,
+  `run.completed {output, usage:{input_tokens, output_tokens, total_tokens}, runtime, completed, partial, interrupted}`,
+  `run.failed {error}`, `run.cancelled {interrupted, turn_exit_reason}`, `subagent.start|complete`. No run.started /
+  message.started / message ids. Rows are written to the session while the run goes (user row first, then tool steps).
+- runtime on this server's (session-authority) runs is `{provider:"", model:"", route_source:"global"}`: no served
+  model, unlike chat/stream's assistant.completed. HermesKit ignores an empty runtime.
+- Answer approvals with `POST /v1/runs/{id}/approval {request_id: <prompt_id>, execution_generation, choice}` -> 200
+  `{status:"resolved"}`. `/steer {input}` -> `{accepted:true}` while running, 409 `run_not_accepting_steer` once it
+  isn't. `/stop {}` -> `{status:"stopping"}`, then `run.cancelled`.
+- Client: `HermesKit/API/Runs.swift` (startRun/runStatus/runEvents/RunEventMapper), `RunRegistry.swift` (persisted
+  runs, history cut, busy input); `ChatStore` follows each run, resumes after relaunch, reconnects with backoff.
