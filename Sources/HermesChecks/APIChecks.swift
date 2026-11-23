@@ -37,9 +37,11 @@ func runAPIChecks() {
     }
     check("session source filter: default hides cron; app/cli kinds normalize") {
         expect(SessionSource.matches("buzz", filter: "chats") && !SessionSource.matches("cron", filter: "chats"))
-        expect(SessionSource.matches(nil, filter: "app") && SessionSource.matches("desktop", filter: "app"))
+        expect(SessionSource.matches(nil, filter: "app") && !SessionSource.matches("desktop", filter: "app"))
+        expect(SessionSource.canContinue(nil) && SessionSource.canContinue("bot_room") && !SessionSource.canContinue("desktop"))
         expect(SessionSource.matches("local", filter: "cli") && SessionSource.matches("cron", filter: "all"))
-        expect(SessionSource.label("cron") == "Scheduled runs" && SessionSource.label("buzz") == "Buzz")
+        expect(SessionSource.label("cron") == "Scheduled Runs" && SessionSource.label("buzz") == "Buzz")
+        expect(SessionSource.label(SessionSource.kind("whatsapp_cloud")) == "WhatsApp" && SessionSource.label("my_platform") == "My platform")
     }
     check("error envelopes") {
         expect(HermesError.from(status: 401, data: Data(#"{"error":{"message":"bad key","code":"x"}}"#.utf8)).message == "bad key")

@@ -352,22 +352,40 @@ public enum ChatEvent: Sendable {
 
 // MARK: - Session sources (list filter)
 
-/// Where a session came from, normalized for filtering: "app" (API clients: Alaria, iOS, desktop), "cli",
-/// "cron" (scheduled runs), or the raw platform name (buzz, telegram, slack...).
+/// Where a session came from, normalized for filtering: "app" (API-server chats: Alaria, iOS), "desktop" (Hermes
+/// Desktop), "cli", "cron" (scheduled runs), or the raw platform name (buzz, telegram, slack...).
 public enum SessionSource {
     public static func kind(_ source: String?) -> String {
         switch (source ?? "api_server").lowercased() {
-        case "api_server", "desktop", "": return "app"
+        case "api_server", "bot_room", "": return "app"
         case "local", "cli", "tui": return "cli"
+        case "whatsapp_cloud": return "whatsapp"
+        case "wecom_callback": return "wecom"
         case let s: return s
         }
+    }
+    /// AIDEV-NOTE: chat admission only continues api_server / bot_room sessions (session_api_turn.py raises
+    /// permission_denied otherwise), so every other source gets a read-only composer. nil = api_server default.
+    public static func canContinue(_ source: String?) -> Bool {
+        guard let s = source?.lowercased(), !s.isEmpty else { return true }
+        return s == "api_server" || s == "bot_room"
     }
     public static func label(_ kind: String) -> String {
         switch kind {
         case "app": return "Alaria"
         case "cli": return "Terminal"
-        case "cron": return "Scheduled runs"
-        default: return kind.prefix(1).uppercased() + kind.dropFirst()
+        case "cron": return "Scheduled Runs"
+        case "desktop": return "Hermes Desktop"
+        case "acp": return "Code Editor"
+        case "whatsapp": return "WhatsApp"
+        case "msgraph_webhook": return "Microsoft 365"
+        case "bluebubbles": return "iMessage"
+        case "qqbot": return "QQ"
+        case "wecom": return "WeCom"
+        case "sms": return "SMS"
+        default:
+            let words = kind.replacingOccurrences(of: "_", with: " ")
+            return words.prefix(1).uppercased() + words.dropFirst()
         }
     }
     /// The list filter: "chats" (everything except scheduled runs, the default), "all", or one kind.
@@ -383,4 +401,5 @@ public enum SessionSource {
 
 extension HermesSession {
     public var sourceKind: String { SessionSource.kind(source) }
+    public var canContinue: Bool { SessionSource.canContinue(source) }
 }
