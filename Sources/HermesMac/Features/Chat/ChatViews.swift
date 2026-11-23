@@ -227,6 +227,7 @@ struct ConversationView: View {
         .navigationTitle(chats.selectedSession?.displayTitle ?? "New Chat")
         .navigationSubtitle(subtitle)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) { ChatModelMenu() } // per-chat model lock (SessionModels.swift)
             ToolbarItem(placement: .primaryAction) {
                 Button { model.voice.start() } label: { Label("Voice", systemImage: "waveform") }
                     .help("Voice mode (⌥⌘V)")
@@ -238,7 +239,7 @@ struct ConversationView: View {
         let ps = model.profiles
         let profile = ps.isMulti ? ps.label(ps.current) : nil // chats live in one profile; say which
         guard let s = chats.selectedSession else { return profile ?? "" }
-        return [profile, s.model, s.messageCount.map { "\($0) messages" }].compactMap { $0 }.joined(separator: " · ")
+        return [profile, s.messageCount.map { "\($0) messages" }].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -513,12 +514,14 @@ struct Composer: View {
         .attachmentPaste(enabled: focused && model.client != nil)
         .animation(.smooth(duration: 0.2), value: tray.isEmpty)
         .profileMentions(focused: focused) // @profile autocomplete + routing hint (Features/Profiles)
+        .slashCommands(focused: focused) // "/" command menu (SlashCommandsUI.swift)
         .onAppear { focused = true }
         .onChange(of: chats.selection) { focused = true }
     }
 
     private func send() {
         let chats = model.chats
+        if SlashRouter.submit(chats.draft, chats: chats) { return } // known "/command": run it, don't send text
         guard chats.attachments.loading == 0 else { model.flash("Still preparing an attachment…"); return }
         chats.sendRouted(chats.draft, attachments: chats.attachments.items) // @profile routing + attachments
     }
