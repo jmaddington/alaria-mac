@@ -153,7 +153,8 @@ public final class HermesClient: Sendable {
                                                                  requestId: o["request_id"] as? String,
                                                                  command: o["command"] as? String,
                                                                  description: o["description"] as? String,
-                                                                 choices: choices)))
+                                                                 choices: choices,
+                                                                 executionGeneration: o["execution_generation"] as? Int)))
                         case "assistant.completed":
                             cont.yield(.completed(content: o["content"] as? String ?? ""))
                         case "run.failed":
@@ -185,7 +186,8 @@ public final class HermesClient: Sendable {
     }
 
     public func answerApproval(_ a: ApprovalRequest, choice: String) async throws {
-        let _: JSONValue = try await api.json("POST", "/v1/runs/\(Self.path(a.runId))/approval", ["choice": choice, "request_id": a.requestId])
+        let _: JSONValue = try await api.json("POST", "/v1/runs/\(Self.path(a.runId))/approval", ["choice": choice, "request_id": a.requestId,
+                                                                                                   "execution_generation": a.executionGeneration])
     }
 
     // MARK: Skills (dashboard)

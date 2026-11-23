@@ -329,6 +329,9 @@ public struct ApprovalRequest: Identifiable, Hashable, Sendable {
     public var command: String?
     public var description: String?
     public var choices: [String]
+    /// AIDEV-NOTE: servers with a session authority reject an answer whose body isn't exactly
+    /// {request_id, execution_generation, choice} ("invalid_params"); echo the event's generation.
+    public var executionGeneration: Int? = nil
 }
 
 /// Typed view of the session chat SSE events (verified event names; see HermesClient.chatStream).
