@@ -2,6 +2,10 @@ import HermesKit
 
 /// Markdown block parser regressions (review beads hermes-mac-iww, hermes-mac-bgk).
 func runMarkdownChecks() {
+    check("markdown: soft-broken lines keep the last line (hermes-mac-9bg)") {
+        let b = MarkdownParser.parse("1\n2\n3\n4\n5")
+        expect("\(b)".contains("5"), "\(b)")
+    }
     check("markdown: loose numbered list stays one list") {
         let b = MarkdownParser.parse("1. alpha\n\n2. beta\n\n3. gamma")
         expect(b == [.numbered(start: 1, [MDListItem(text: "alpha"), MDListItem(text: "beta"), MDListItem(text: "gamma")])], "\(b)")
