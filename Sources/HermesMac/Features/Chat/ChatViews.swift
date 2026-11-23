@@ -9,6 +9,8 @@ struct SessionList: View {
     @ViewState private var deleting: HermesSession?
     @ViewState private var showArchived = false
     @ViewState private var newTitle = ""
+    // AIDEV-NOTE: default hides scheduled (cron) runs: they flooded the list (user 2026-11-22). See SessionSource.
+    @AppStorage("chats.sourceFilter") private var sourceFilter = "chats"
 
     private var chats: ChatStore { model.chats }
 
@@ -80,7 +82,10 @@ struct SessionList: View {
         }
         // In the list it filters (not the window toolbar, where it floated over the detail and the browser panel).
         .safeAreaInset(edge: .top, spacing: 0) {
-            InlineSearchField(prompt: model.client?.hasDashboard == true ? "Search all chats" : "Filter chats", text: $chats.searchText)
+            HStack(spacing: 0) {
+                InlineSearchField(prompt: model.client?.hasDashboard == true ? "Search all chats" : "Filter chats", text: $chats.searchText)
+                sourceMenu.padding(.trailing, 12)
+            }
         }
         .task(id: chats.searchText) {
             try? await Task.sleep(for: .milliseconds(250))
@@ -105,6 +110,29 @@ struct SessionList: View {
         }
     }
 
+    private var sourceMenu: some View {
+        let kinds = Array(Set(chats.sessions.map(\.sourceKind))).sorted { SessionSource.label($0) < SessionSource.label($1) }
+        let filtered = sourceFilter != "chats"
+        return Menu {
+            Picker("Show", selection: $sourceFilter) {
+                Text("Chats").tag("chats")
+                Text("Everything").tag("all")
+                Divider()
+                ForEach(kinds, id: \.self) { k in Text(SessionSource.label(k)).tag(k) }
+                if !kinds.contains(sourceFilter), !["chats", "all"].contains(sourceFilter) {
+                    Text(SessionSource.label(sourceFilter)).tag(sourceFilter)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: filtered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                .foregroundStyle(filtered ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+        .help(filtered ? "Showing: \(sourceFilter == "all" ? "everything" : SessionSource.label(sourceFilter))" : "Showing chats (scheduled runs hidden). Filter by source")
+        .accessibilityLabel("Filter chats by source")
+    }
+
     @ViewBuilder private func menu(for s: HermesSession) -> some View {
         Button("Rename…") { newTitle = s.title ?? ""; renaming = s }
         Button(s.pinned == true ? "Unpin" : "Pin") { chats.togglePin(s) }
@@ -116,7 +144,8 @@ struct SessionList: View {
 
     private var groups: [(title: String, items: [HermesSession])] {
         let q = chats.searchText.lowercased()
-        let all = chats.sessions.filter { $0.archived != true && (q.isEmpty || $0.displayTitle.lowercased().contains(q)) }
+        let all = chats.sessions.filter { $0.archived != true && SessionSource.matches($0.source, filter: sourceFilter)
+            && (q.isEmpty || $0.displayTitle.lowercased().contains(q)) }
         let cal = Calendar.current
         var buckets: [(String, [HermesSession])] = [("Pinned", []), ("Today", []), ("Yesterday", []), ("Previous 7 Days", []), ("Earlier", [])]
         for s in all {

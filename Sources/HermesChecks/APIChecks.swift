@@ -35,6 +35,12 @@ func runAPIChecks() {
         if p.feed("") != nil { n += 1 }
         expect(n == 3, "got \(n)")
     }
+    check("session source filter: default hides cron; app/cli kinds normalize") {
+        expect(SessionSource.matches("buzz", filter: "chats") && !SessionSource.matches("cron", filter: "chats"))
+        expect(SessionSource.matches(nil, filter: "app") && SessionSource.matches("desktop", filter: "app"))
+        expect(SessionSource.matches("local", filter: "cli") && SessionSource.matches("cron", filter: "all"))
+        expect(SessionSource.label("cron") == "Scheduled runs" && SessionSource.label("buzz") == "Buzz")
+    }
     check("error envelopes") {
         expect(HermesError.from(status: 401, data: Data(#"{"error":{"message":"bad key","code":"x"}}"#.utf8)).message == "bad key")
         expect(HermesError.from(status: 404, data: Data(#"{"error":"Job not found"}"#.utf8)).message == "Job not found")

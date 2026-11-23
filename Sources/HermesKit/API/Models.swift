@@ -349,3 +349,38 @@ public enum ChatEvent: Sendable {
     /// The provider/model serving this run (run.started when locked; assistant.completed always).
     case runtime(SessionRuntime)
 }
+
+// MARK: - Session sources (list filter)
+
+/// Where a session came from, normalized for filtering: "app" (API clients: Alaria, iOS, desktop), "cli",
+/// "cron" (scheduled runs), or the raw platform name (buzz, telegram, slack...).
+public enum SessionSource {
+    public static func kind(_ source: String?) -> String {
+        switch (source ?? "api_server").lowercased() {
+        case "api_server", "desktop", "": return "app"
+        case "local", "cli", "tui": return "cli"
+        case let s: return s
+        }
+    }
+    public static func label(_ kind: String) -> String {
+        switch kind {
+        case "app": return "Alaria"
+        case "cli": return "Terminal"
+        case "cron": return "Scheduled runs"
+        default: return kind.prefix(1).uppercased() + kind.dropFirst()
+        }
+    }
+    /// The list filter: "chats" (everything except scheduled runs, the default), "all", or one kind.
+    public static func matches(_ source: String?, filter: String) -> Bool {
+        let k = kind(source)
+        switch filter {
+        case "all": return true
+        case "chats": return k != "cron"
+        default: return k == filter
+        }
+    }
+}
+
+extension HermesSession {
+    public var sourceKind: String { SessionSource.kind(source) }
+}
