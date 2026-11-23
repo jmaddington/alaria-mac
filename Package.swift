@@ -29,6 +29,7 @@ let package = Package(
                 .linkedFramework("Speech"),
                 .linkedFramework("Security"),
                 .linkedFramework("WebKit"),
+                .linkedFramework("UserNotifications"),
             ]
         ),
         // AIDEV-NOTE: CLT has no XCTest and no Testing macro plugin, so checks are a plain executable:

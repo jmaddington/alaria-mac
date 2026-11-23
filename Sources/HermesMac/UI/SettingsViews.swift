@@ -11,6 +11,7 @@ struct SettingsView: View {
             ConnectionPane().tabItem { Label("Connection", systemImage: "network") }.tag("connection")
             ProfilesPane().tabItem { Label("Profiles", systemImage: "person.2") }.tag("profiles")
             VoicePane().tabItem { Label("Voice", systemImage: "waveform") }.tag("voice")
+            NotificationsPane().tabItem { Label("Notifications", systemImage: "bell.badge") }.tag("notifications")
             ModelPane().tabItem { Label("Model", systemImage: "cpu") }.tag("model")
             ConfigPane().tabItem { Label("Config", systemImage: "doc.text") }.tag("config")
             BrowserSettingsPane().tabItem { Label("Browser", systemImage: "globe") }.tag("browser")
@@ -135,6 +136,66 @@ struct ConnectionPane: View {
     private func select(_ id: String) {
         guard let s = model.servers.first(where: { $0.id == id }) else { return }
         editingID = id; draft = s; result = nil
+    }
+}
+
+/// Per-kind toggles + the system authorization state (bead hermes-mac-vqu). Kinds are global; cron watching
+/// follows whichever server/profile is current.
+struct NotificationsPane: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage(NotificationKind.replies.defaultsKey) private var replies = true
+    @AppStorage(NotificationKind.approvals.defaultsKey) private var approvals = true
+    @AppStorage(NotificationKind.cron.defaultsKey) private var cron = true
+    @ViewState private var asking = false
+
+    var body: some View {
+        let n = model.notifier
+        Form {
+            SwiftUI.Section {
+                if !n.isAvailable {
+                    Label("Notifications need the app bundle (build/Alaria.app).", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                } else {
+                    switch n.authorization {
+                    case .denied:
+                        LabeledContent {
+                            Button("Open System Settings…") { Notifier.openSystemSettings() }
+                        } label: {
+                            Label("Turned off for Alaria in System Settings", systemImage: "bell.slash").foregroundStyle(.orange)
+                        }
+                    case .notDetermined:
+                        LabeledContent {
+                            Button(asking ? "Asking…" : "Allow Now") {
+                                asking = true
+                                Task { await n.ensureAuthorized(); asking = false }
+                            }.disabled(asking)
+                        } label: {
+                            Text("macOS will ask the first time Alaria has something to tell you.")
+                        }
+                    default:
+                        LabeledContent {
+                            Button("System Settings…") { Notifier.openSystemSettings() }
+                        } label: {
+                            Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        }
+                    }
+                }
+            } header: { Text("Permission") }
+            SwiftUI.Section {
+                Toggle(NotificationKind.replies.label, isOn: $replies)
+                Toggle(NotificationKind.approvals.label, isOn: $approvals)
+                Toggle(NotificationKind.cron.label, isOn: $cron)
+            } header: { Text("Notify me about") } footer: {
+                Text("Only when Alaria isn't in front or you're looking at a different chat. Approval banners have Allow Once and Deny; click any notification to open its chat. Scheduled runs are checked every 30 seconds on the current server and profile, and only runs that finish while Alaria is open are announced.")
+            }
+            .disabled(n.authorization == .denied)
+        }
+        .formStyle(.grouped)
+        .task { await n.refreshAuthorization() }
+        // The user may flip the system switch and come back.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await n.refreshAuthorization() }
+        }
     }
 }
 

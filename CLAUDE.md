@@ -99,6 +99,8 @@ Launch the built app against the dev server (seeds the Keychain on first run):
   (voice state machine), `LibraryStore` (skills/jobs/tools/memory), SwiftUI views per section.
 - Browser panel + Hermes browser tool: `Features/Browser/` (WKWebView inspector) served to Hermes as MCP tools by
   `HermesMCPServer` (loopback listener) over `HermesKit/MCP` (pure-Foundation protocol). See docs/agents/browser-tool.md.
+- Notifications: `App/Notifications.swift` (`Notifier`, UNUserNotificationCenter; nil outside a .app bundle) + pure
+  rules/cron diffing in `HermesKit/API/NotificationRules.swift` (checked). ChatStore/AppModel call its hooks.
 - Voice mode reference implementation: github.com/jmaddington/drive-mode (VAD thresholds, earcon vocabulary).
 
 ## Conventions & Patterns

@@ -163,6 +163,7 @@ final class ChatStore {
         let gen = streamGen
         streamTask = Task {
             var failure: Error?
+            var sessionID: String? // for the notification hook below
             do {
                 let sid: String
                 if let s = selection { sid = s } else {
@@ -173,11 +174,13 @@ final class ChatStore {
                     loadedFor = sid
                     sessions.insert(s, at: 0)
                 }
+                sessionID = sid
                 for try await e in client.chatStream(session: sid, parts: parts) {
                     if case .approval(let a) = e, isYolo(sid), a.choices.contains("once") {
                         autoApprove(a, entry: replyID); continue
                     }
                     apply(e, to: replyID)
+                    if case .approval(let a) = e { app?.notifier.approvalRequested(a, session: sid, entry: replyID) }
                     onEvent?(e)
                 }
             } catch is CancellationError {
@@ -185,6 +188,7 @@ final class ChatStore {
                 if !Task.isCancelled { failure = error; update(replyID) { $0.error = error.localizedDescription } }
             }
             update(replyID) { $0.streaming = false }
+            if let sessionID { app?.notifier.replyEnded(session: sessionID, entry: replyID, cancelled: Task.isCancelled) }
             if gen == streamGen { streamTask = nil; runId = nil } // a newer send may own these now
             onFinish?(failure)
             await reload() // titles are generated server-side after the first turn...
@@ -246,6 +250,7 @@ final class ChatStore {
             do {
                 try await client.answerApproval(a, choice: choice)
                 update(entry) { if $0.approval == a { $0.approval = nil }; $0.answeringApproval = false }
+                app?.notifier.approvalResolved(a)
             } catch {
                 update(entry) { $0.answeringApproval = false }
                 app?.flash("Approval wasn't sent: \(error.localizedDescription). Try again.")
