@@ -193,6 +193,7 @@ final class AppModel {
     let library = LibraryStore()
     let profiles = ProfileStore()
     let browser = BrowserModel()
+    let notifier = Notifier()
 
     init() {
         chats.app = self
@@ -200,6 +201,7 @@ final class AppModel {
         library.app = self
         profiles.app = self
         browser.app = self
+        notifier.app = self
         browser.agent.startIfEnabled() // loopback MCP server for Hermes, only when the user allowed it
         if settings.isConfigured { connect() } else { showOnboarding = true }
         installVoiceTestHarness()
@@ -266,6 +268,7 @@ final class AppModel {
                 await chats.reload()
                 await library.loadJobs()
                 await library.loadSkills()
+                await notifier.pollCron(force: true) // baseline for cron-run notifications (no alerts on first load)
             } catch {
                 guard !Task.isCancelled else { return }
                 connection = .failed(error.localizedDescription)
@@ -281,7 +284,7 @@ final class AppModel {
             switch connection {
             case .failed: connect() // auto-retry; connect() keeps this monitor
             case .connected:
-                do { _ = try await client.health() }
+                do { _ = try await client.health(); await notifier.pollCron() } // cron notifications: no server push
                 catch { if case .connected = connection { connection = .failed(error.localizedDescription) } }
             default: break
             }
