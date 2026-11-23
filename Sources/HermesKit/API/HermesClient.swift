@@ -62,11 +62,21 @@ public final class HermesClient: Sendable {
         return (r.data, r.hasMore ?? false)
     }
 
-    public func createSession(title: String? = nil, systemPrompt: String? = nil) async throws -> HermesSession {
+    /// `model` creates the chat already locked to that model (see SessionModel.swift).
+    public func createSession(title: String? = nil, systemPrompt: String? = nil, model: ModelChoice? = nil) async throws -> HermesSession {
         // AIDEV-NOTE: no custom "source": chat admission refuses sessions whose source isn't api_server/bot_room
         // (session_api_turn.admit_api_steps -> permission_denied). Server default is api_server.
-        let r: SessionEnvelope = try await api.json("POST", "/api/sessions", ["title": title, "system_prompt": systemPrompt])
+        var body: [String: Any?] = ["title": title, "system_prompt": systemPrompt]
+        if let model { body.merge(model.body) { $1 }; body["require_model_lock"] = true }
+        let r: SessionEnvelope = try await api.json("POST", "/api/sessions", body)
         return r.session
+    }
+
+    /// Locks a chat to a model (+ reasoning/fast options) for all its later turns. Returns the accepted runtime.
+    @discardableResult
+    public func lockSessionModel(_ id: String, _ choice: ModelChoice) async throws -> SessionRuntime {
+        let r: ModelLockEnvelope = try await api.json("POST", "/api/sessions/\(Self.path(id))/model", choice.body)
+        return r.runtime
     }
 
     public func updateSession(_ id: String, title: String? = nil, pinned: Bool? = nil, archived: Bool? = nil) async throws -> HermesSession {
@@ -125,6 +135,7 @@ public final class HermesClient: Sendable {
                         case "run.started":
                             runId = o["run_id"] as? String ?? ""
                             cont.yield(.started(runId: runId, messageId: nil))
+                            if let rt = SessionRuntime(o["runtime"]) { cont.yield(.runtime(rt)) }
                         case "message.started":
                             let m = o["message"] as? [String: Any]
                             cont.yield(.started(runId: runId, messageId: m?["id"] as? String))
@@ -155,6 +166,8 @@ public final class HermesClient: Sendable {
                                                                  description: o["description"] as? String,
                                                                  choices: choices)))
                         case "assistant.completed":
+                            // The effective runtime (what actually served the turn), present even without a lock.
+                            if let rt = SessionRuntime(o["runtime"]) { cont.yield(.runtime(rt)) }
                             cont.yield(.completed(content: o["content"] as? String ?? ""))
                         case "run.failed":
                             cont.yield(.failed((o["error"] as? String) ?? ((o["error"] as? [String: Any])?["message"] as? String) ?? "The run failed"))
@@ -293,9 +306,9 @@ public final class HermesClient: Sendable {
     }
 
     public func modelInfo() async throws -> ModelInfo { try await requireDash().get("/api/model/info") }
-    public func modelOptions() async throws -> [ProviderOption] {
-        let r: ProvidersEnvelope = try await api.get("/api/model/options"); return r.providers
-    }
+    public func modelOptions() async throws -> [ProviderOption] { try await modelCatalog().providers }
+    /// Picker inventory + the global default model (API server, so it works without the dashboard).
+    public func modelCatalog() async throws -> ModelCatalog { try await api.get("/api/model/options") }
     public func setModel(provider: String, model: String) async throws {
         let _: JSONValue = try await requireDash().json("POST", "/api/model/set", ["scope": "main", "provider": provider, "model": model])
     }
