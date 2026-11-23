@@ -155,5 +155,6 @@ func liveChecks(_ c: HermesClient) async {
             expect(started && done && text.lowercased().contains("pong"), "text=\(text)")
             try await c.deleteSession(s.id)
         }
+        await liveRunChecks(c) // detached /v1/runs turn (RunChecks.swift)
     }
 }
