@@ -65,7 +65,7 @@ final class ChatStore {
     }
 
     func select(_ id: String?) {
-        if id != nil { yoloNewChat = false } // a pending YOLO belongs to the blank chat only (security review)
+        if id != nil { yoloNewChat = false; models.pending = nil } // pending YOLO/model belong to the blank chat only
         guard id != loadedFor else { return }
         if isStreaming, id != selection {
             // Hermes interrupts the agent when the stream's client goes away, so leaving a chat stops its reply.

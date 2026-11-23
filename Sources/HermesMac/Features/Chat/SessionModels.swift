@@ -103,8 +103,14 @@ extension ChatStore {
     func setModel(_ choice: ModelChoice) {
         guard let client else { return }
         guard let s = selectedSession else {
-            models.pending = choice
-            app?.flash("New chat will use \(choice.label)")
+            // Picking the default for a blank chat means "follow the server", not "lock to today's default".
+            if let d = models.defaultChoice, d.model == choice.model, choice.reasoningEffort == nil, !choice.fast {
+                models.pending = nil
+                app?.flash("New chat will use the server's default model")
+            } else {
+                models.pending = choice
+                app?.flash("New chat will use \(choice.label)")
+            }
             return
         }
         let wasStreaming = isStreaming
