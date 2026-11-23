@@ -16,6 +16,9 @@ struct HermesApp: App {
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1240, height: 800)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Updater.shared.checkForUpdates() }.disabled(!Updater.shared.canCheck)
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Chat") { model.section = .chats; model.chats.newChat() }.keyboardShortcut("n")
             }
@@ -60,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SwiftPM executables launch as background processes; promote to a regular foreground app.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+        Updater.shared.start()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }

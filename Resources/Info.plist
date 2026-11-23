@@ -13,6 +13,11 @@
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
     <key>NSHighResolutionCapable</key><true/>
+    <!-- Sparkle auto-update (hermes-mac-d3k): feed = appcast.xml on the latest GitHub Release; see docs/agents/release.md. -->
+    <key>SUFeedURL</key><string>https://github.com/jmaddington/hermes-mac/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key><string>7qHjhqUb3bd0eU23RiOCkc/djtIs6h37IsK1GW/F1RQ=</string>
+    <key>SUEnableAutomaticChecks</key><true/>
+    <key>SUScheduledCheckInterval</key><integer>86400</integer>
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSMicrophoneUsageDescription</key><string>Alaria listens in voice mode so you can talk to your Hermes agent hands-free.</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>Alaria transcribes what you say in voice mode on this Mac.</string>

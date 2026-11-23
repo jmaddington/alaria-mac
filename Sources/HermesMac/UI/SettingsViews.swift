@@ -16,6 +16,7 @@ struct SettingsView: View {
             ModelPane().tabItem { Label("Model", systemImage: "cpu") }.tag("model")
             ConfigPane().tabItem { Label("Config", systemImage: "doc.text") }.tag("config")
             BrowserSettingsPane().tabItem { Label("Browser", systemImage: "globe") }.tag("browser")
+            UpdatesPane().tabItem { Label("Updates", systemImage: "arrow.triangle.2.circlepath") }.tag("updates")
         }
         .frame(width: 600)
     }
@@ -436,5 +437,39 @@ struct ConfigPane: View {
             original = r.yaml; path = r.path; loaded = true
             yaml = model.library.configDraft ?? r.yaml // resume unsaved edits
         } catch { loadError = error.localizedDescription }
+    }
+}
+
+/// Sparkle settings (hermes-mac-d3k). Off outside a release .app bundle.
+struct UpdatesPane: View {
+    @Bindable private var updater = Updater.shared
+
+    var body: some View {
+        Form {
+            SwiftUI.Section {
+                LabeledContent("Version", value: Updater.currentVersion)
+                if updater.isRunning {
+                    Toggle("Check for updates automatically", isOn: $updater.automaticallyChecks)
+                    Toggle("Download and install updates automatically", isOn: $updater.automaticallyInstalls)
+                        .disabled(!updater.automaticallyChecks)
+                    LabeledContent {
+                        Button("Check Now") { updater.checkForUpdates() }.disabled(!updater.canCheck)
+                    } label: {
+                        if let last = updater.lastChecked {
+                            Text("Last checked \(last.formatted(.relative(presentation: .named)))")
+                        } else {
+                            Text("Not checked yet")
+                        }
+                    }
+                } else {
+                    Label("Updates need the app bundle (build/Alaria.app).", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                }
+            } footer: {
+                Text("Updates come from GitHub Releases and are verified with Alaria's signing key before they install.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }

@@ -5,6 +5,10 @@ import PackageDescription
 let package = Package(
     name: "HermesMac",
     platforms: [.macOS("26.0")],
+    dependencies: [
+        // AIDEV-NOTE: keep in step with SPARKLE_VERSION in scripts/ci/sparkle-tools.sh (sign_update/appcast).
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.1"),
+    ],
     targets: [
         .target(
             name: "HermesKit",
@@ -21,10 +25,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "HermesMac",
-            dependencies: ["HermesKit", "HermesMCPServer"],
+            dependencies: ["HermesKit", "HermesMCPServer", .product(name: "Sparkle", package: "Sparkle")],
             path: "Sources/HermesMac",
             swiftSettings: [.swiftLanguageMode(.v5)],
             linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
                 .linkedFramework("AVFAudio"),
                 .linkedFramework("Speech"),
                 .linkedFramework("Security"),
