@@ -7,6 +7,8 @@ REPO=${REPO:-jmaddington/hermes-mac}
 P12=${1:?usage: set-release-secrets.sh <DeveloperID.p12> <AuthKey_ID.p8>}
 P8=${2:?usage: set-release-secrets.sh <DeveloperID.p12> <AuthKey_ID.p8>}
 KEY_ID=${${P8:t:r}#AuthKey_}
+# AIDEV-NOTE: needs a real terminal; Claude Code's `!` prefix has no TTY, so read would hit EOF silently.
+[[ -t 0 ]] || { echo "✗ run this in a Terminal window (it prompts for the password)"; exit 1; }
 read -rs "PW?.p12 password: "; echo; export PW
 # Fail fast on a wrong password instead of finding out in CI.
 openssl pkcs12 -in "$P12" -noout -passin env:PW 2>/dev/null || openssl pkcs12 -legacy -in "$P12" -noout -passin env:PW 2>/dev/null \
