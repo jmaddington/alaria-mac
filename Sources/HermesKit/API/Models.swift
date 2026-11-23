@@ -238,7 +238,6 @@ public struct ProviderOption: Codable, Identifiable, Hashable, Sendable {
     /// Model entries are strings in some versions and {id,...} objects in others.
     public var modelIDs: [String] { (models ?? []).compactMap { $0.string ?? $0["id"]?.string } }
 }
-struct ProvidersEnvelope: Decodable { let providers: [ProviderOption] }
 
 public struct MemoryProvider: Codable, Identifiable, Hashable, Sendable {
     public var name: String
@@ -347,4 +346,6 @@ public enum ChatEvent: Sendable {
     case failed(String)
     case cancelled
     case status(String)
+    /// The provider/model serving this run (run.started when locked; assistant.completed always).
+    case runtime(SessionRuntime)
 }

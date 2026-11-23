@@ -31,6 +31,8 @@ final class ChatStore {
     var draft = ""
     /// Composer attachments waiting to be sent (Attachments.swift).
     let attachments = AttachmentTray()
+    /// Per-chat model locks + the picker inventory (SessionModels.swift).
+    let models = SessionModels()
     var runId: String?
     var isStreaming: Bool { streamTask != nil }
     var searchText = ""
@@ -145,6 +147,7 @@ final class ChatStore {
         entries = []
         draft = ""
         attachments.clear()
+        models.pending = nil
     }
 
     /// Sends a message, creating a session first if needed. `onEvent` lets voice mode tap the stream.
@@ -170,9 +173,10 @@ final class ChatStore {
             do {
                 let sid: String
                 if let s = selection { sid = s } else {
-                    let s = try await client.createSession(title: nil)
+                    let s = try await client.createSession(title: nil, model: models.pending) // a model picked pre-create
                     sid = s.id
                     if armYolo { setYolo(true, for: sid) }
+                    models.adoptPending(for: sid)
                     selection = sid
                     loadedFor = sid
                     sessions.insert(s, at: 0)
@@ -222,6 +226,7 @@ final class ChatStore {
         case .failed(let msg): update(id) { $0.error = Self.readable(msg) }
         case .cancelled: update(id) { $0.error = "Stopped" } // mark interrupted replies, with or without text (hermes-mac-d76)
         case .status: break
+        case .runtime(let r): if let s = selection { models.noteServed(r, session: s) }
         }
     }
 
