@@ -51,6 +51,10 @@ struct LiveRun: Identifiable {
     var settled: Set<String> = []
     /// Events were missed (buffer swept, run forgotten): reload the chat's stored history when it ends.
     var reloadHistory = false
+    /// Cancelled while still queued: its bubbles go away when it ends instead of staying as "Stopped".
+    var withdrawn = false
+    /// Approvals YOLO already answered from a status poll, so the next poll doesn't answer them again.
+    var yoloAnswered: Set<String> = []
     var onEvent: ((ChatEvent) -> Void)?
     var onFinish: ((Error?) -> Void)?
     var queued: Bool { reply.queued }
@@ -150,6 +154,8 @@ final class ChatStore {
         entries = liveEntries(for: id)
         guard let id, let client else { return }
         loadingMessages = true
+        // Captured before the await: a run that finishes during it still has its turn on screen (dev-40 review #5).
+        let runsBefore = live.filter { $0.session == id }
         Task {
             defer { if selection == id { loadingMessages = false } }
             do {
@@ -158,7 +164,9 @@ final class ChatStore {
                 // A live run's rows so far (user row, tool steps) are shown by its live reply instead.
                 // Without a server created_at (its status check failed), a running run's turn starts at the last user row.
                 let lastUser = msgs.last { $0.role == "user" }?.timestamp
-                let starts = live.filter { $0.session == id }.compactMap { $0.createdAt ?? ($0.queued ? nil : lastUser) }
+                let now = live.filter { $0.session == id }
+                let runs = now + runsBefore.filter { b in !now.contains { $0.id == b.id } }
+                let starts = runs.compactMap { $0.createdAt ?? ($0.queued ? nil : lastUser) }
                 let cut = RunHistory.cut(msgs, liveRunsCreatedAt: starts)
                 // Keep anything sent while history was loading (hermes-mac-7j1): history goes in front of it.
                 let history = Self.entries(from: cut)
@@ -292,6 +300,7 @@ final class ChatStore {
                        onEvent: ((ChatEvent) -> Void)? = nil, onFinish: ((Error?) -> Void)? = nil) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, let client else { return false }
+        syncScope() // a scope change not yet synced would detach this run right after it starts
         let parts = Attachment.parts(text: text, attachments)
         if let problem = ChatContent.problem(with: parts) { app?.flash(problem); return false }
         draft = ""
@@ -328,6 +337,9 @@ final class ChatStore {
             guard var r = run(key) else { return }
             if r.session == nil {
                 let s = try await client.createSession(title: nil, model: models.pending) // a model picked pre-create
+                // Detached (scope change) or stopped while creating: don't adopt the session into whatever is open now.
+                try Task.checkCancellation()
+                guard run(key) != nil else { return }
                 if armYolo { setYolo(true, for: s.id) }
                 models.adoptPending(for: s.id)
                 sessions.insert(s, at: 0)
@@ -338,6 +350,12 @@ final class ChatStore {
             }
             guard let sid = r.session else { return }
             let h = try await client.startRun(session: sid, parts: parts)
+            // Stopped or cancelled while the POST was in flight: the server has the run now, so stop it there too.
+            guard run(key) != nil else {
+                runLog.info("run \(h.runId, privacy: .public) was stopped before it started; stopping it [ALR-RUN-STOP-EARLY]")
+                try? await client.stopRun(h.runId)
+                return
+            }
             mutate(key) { $0.runId = h.runId }
             runLog.info("run \(h.runId, privacy: .public) started in \(sid, privacy: .public) [ALR-RUN1]")
             persist(key)
@@ -407,6 +425,14 @@ final class ChatStore {
                 let st = try await client.runStatus(runId)
                 if st.isTerminal { applyTerminal(st, key); reloadIfOpen(key); return }
                 let sid = run(key)?.session, had = run(key)?.reply.approval
+                if let a = st.pendingApprovals.first, let p = a.requestId, let sid, isYolo(sid), a.choices.contains("once"),
+                   run(key)?.settled.contains(p) == false, run(key)?.yoloAnswered.contains(p) == false {
+                    mutate(key) { $0.yoloAnswered.insert(p) }
+                    autoApprove(a, entry: key)
+                    backoff = 2
+                    try await sleepBackoff(backoff)
+                    continue
+                }
                 mutate(key) { r in
                     if st.isQueued == false { r.user.queued = false; r.reply.queued = false }
                     if let a = st.pendingApprovals.first, r.reply.approval == nil, !r.settled.contains(a.requestId ?? "") {
@@ -491,6 +517,7 @@ final class ChatStore {
         case .approval(let a): update(id) { $0.approval = a }
         case .completed(let content):
             update(id) {
+                $0.approval = nil // it finished, so whatever the card asked was answered (no "expired" label)
                 if MessageText.isInterruption(content) { $0.text = ""; $0.error = "Stopped" }
                 else if !content.isEmpty { $0.text = content }
             }
@@ -517,7 +544,8 @@ final class ChatStore {
             app?.notifier.approvalResolved(a)
         }
         mutate(key) { $0.reply.streaming = false; $0.reply.queued = false; $0.user.queued = false }
-        if let sid = r.session { app?.notifier.replyEnded(session: sid, entry: key, cancelled: false) }
+        if r.withdrawn { entries.removeAll { $0.id == r.user.id || $0.id == r.reply.id } }
+        if let sid = r.session, !r.withdrawn { app?.notifier.replyEnded(session: sid, entry: key, cancelled: false) }
         live.removeAll { $0.id == key }
         liveTasks[key] = nil
         unpersist(r)
@@ -550,7 +578,8 @@ final class ChatStore {
             try? await Task.sleep(for: .seconds(r.runId == nil ? 0 : 5))
             guard run(key) != nil else { return }
             runLog.info("stop: no run.cancelled in time; letting go [ALR-RUN-STOP-LOCAL]")
-            liveTasks[key]?.cancel()
+            // Still posting (no run id): leave drive running so it can stop the server run once it gets the id.
+            if run(key)?.runId != nil { liveTasks[key]?.cancel() }
             mutate(key) { if $0.reply.error == nil { $0.reply.error = "Stopped" } }
             await finish(key, failure: nil)
         }
@@ -559,8 +588,9 @@ final class ChatStore {
     /// Cancels a message still waiting in the queue (its "Queued" badge).
     func cancelQueued(entry userEntryID: String) {
         guard let client, let r = live.first(where: { $0.user.id == userEntryID }), r.queued else { return }
+        mutate(r.id) { $0.withdrawn = true }
         if let id = r.runId { app?.run("Cancel") { try await client.stopRun(id) } }
-        else { liveTasks[r.id]?.cancel(); Task { await finish(r.id, failure: nil) } }
+        else { Task { await finish(r.id, failure: nil) } } // drive stops the server run once POST /v1/runs returns
     }
 
     // MARK: persistence + scope
@@ -583,7 +613,9 @@ final class ChatStore {
 
     /// Called on every list reload: when the server or profile changed, stop following the old one's runs
     /// (they go on server-side and stay persisted under their own key) and pick up this one's.
-    private func syncScope() {
+    // AIDEV-NOTE: must run synchronously on a profile/server change BEFORE anything starts a run there; if a
+    // deferred reload() does it later, detachAll() kills the run just started in the new scope (dev-40 review #1).
+    func syncScope() {
         let key = registryKey
         guard key != attachedKey else { return }
         attachedKey = key
@@ -615,6 +647,8 @@ final class ChatStore {
                     return
                 }
                 guard registryKey == key, !live.contains(where: { $0.runId == p.runId }) else { return }
+                // It may have been resumed and finished (unpersisted) by another pass while this check was in flight.
+                guard RunRegistry(data: UserDefaults.standard.data(forKey: key)).runs.contains(where: { $0.runId == p.runId }) else { return }
                 guard !st.isTerminal else { dropPersisted(p, key: key); return }
                 let user = ChatEntry(id: UUID().uuidString, role: .user, text: p.text, date: nil, queued: st.isQueued)
                 let reply = ChatEntry(id: UUID().uuidString, role: .assistant, text: "", streaming: true, date: nil, queued: st.isQueued)

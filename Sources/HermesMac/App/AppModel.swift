@@ -316,6 +316,7 @@ final class AppModel {
         chats.archived = []
         library.reset()
         rescopeClient()
+        chats.syncScope() // now, not in the Task: a run sent right after the switch must not be detached by it
         Task {
             await chats.reload()
             await library.loadJobs()
