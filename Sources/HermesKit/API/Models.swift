@@ -27,6 +27,8 @@ public struct HermesSession: Codable, Identifiable, Hashable, Sendable {
 
     public var displayTitle: String {
         if let t = title, !t.isEmpty { return t }
+        // A scheduled run has no title until it finishes; its preview is Hermes' cron preamble, not user words.
+        if source == "cron" { return "Scheduled run" }
         if let p = preview, !p.isEmpty { return String(p.prefix(60)) }
         return "New Chat"
     }
