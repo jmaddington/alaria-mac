@@ -49,3 +49,18 @@ sessions whose source is not `api_server` or `bot_room`. Never send `source`; th
   don't inherit it. `PUT /api/env?profile=<name> {key:"API_SERVER_KEY", value}` sets one; effective immediately.
   `/health` is unauthenticated, so probe with `GET /api/sessions?limit=1`.
 - No per-turn routing into another profile's session: the app's `@name` mention starts a new chat in that profile.
+
+## Per-chat model + "/" commands (verified 2026-11-22, bead hermes-mac-ptp)
+- The API server does NOT run slash commands: "/model" sent as a chat message reaches the LLM as plain text. The
+  composer's "/" menu (SlashCommandsUI.swift, catalog in HermesKit/API/SlashCommands.swift) maps each command to a
+  real endpoint client-side; `SlashRouter.executors` is pluggable for a future dashboard `/api/ws` backend.
+- `POST /api/sessions/{id}/model {provider, model, model_options}` persists a confirmed session model lock and sets the
+  session row's `model`; later turns run on it. `POST /api/sessions` takes the same fields + `require_model_lock:true`.
+  `model_options`: `{reasoning:{enabled:false}}` or `{reasoning:{enabled:true, effort}}`, `service_tier:"priority"`.
+- The lock replaces `model_options` wholesale and `model_config` is never returned, so the app remembers each chat's
+  full choice (SessionModels, UserDefaults) and resends it. No unlock endpoint: "default" = lock to the global model.
+- `GET /api/model/options` (API server) also returns top-level `model`/`provider`: the global default.
+- SSE `runtime` {provider, model, route_source, model_lock}: on run.started only reflects a lock (empty otherwise);
+  assistant.completed / run.completed carry the effective runtime.
+- No API-server route for /compress, /undo, /rewind, /yolo (store has set_yolo, no HTTP route), /queue, /bg, /btw,
+  /goal, /personality, /verbose, /rollback, /diff.
