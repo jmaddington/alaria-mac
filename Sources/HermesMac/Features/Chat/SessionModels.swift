@@ -43,6 +43,10 @@ final class SessionModels {
             chosen = Self.restore(storeKey)
             served = [:]
             pending = nil
+            // AIDEV-NOTE: never show (or let anyone pick from) the previous server's models/default while this one
+            // loads or if it fails: a new chat would look like it runs on the old server's default (hermes-mac-awa).
+            catalog = nil
+            loadError = nil
         }
         loadedFor = id
         loading = true
@@ -174,7 +178,7 @@ struct ChatModelMenu: View {
             HStack(spacing: 5) {
                 if let id = chats.selection, ms.switching.contains(id) { ProgressView().controlSize(.mini) }
                 else { Image(systemName: "cpu") }
-                Text(choice?.label ?? "Model").lineLimit(1)
+                Text(choice?.label ?? (chats.selection == nil ? "Server default" : "Model")).lineLimit(1)
             }
         }
         .help(help(choice, isDefault))
@@ -195,7 +199,10 @@ struct ChatModelMenu: View {
     }
 
     private func help(_ c: ModelChoice?, _ isDefault: Bool) -> String {
-        guard let c else { return "Choose the model for this chat" }
+        guard let c else {
+            return chats.selection == nil ? "New chats use the server's default model. Type /model to pick another."
+                                          : "Choose the model for this chat"
+        }
         let who = chats.selection == nil ? "New chat" : "This chat"
         return "\(who) uses \(c.model)\(c.provider.map { " (\($0))" } ?? "")\(isDefault ? ", the server default" : ""). Type /model to switch."
     }

@@ -149,7 +149,9 @@ final class ChatStore {
         entries = []
         draft = ""
         attachments.clear()
-        models.pending = nil
+        models.pending = nil // new chats follow the server's default unless a model is picked for them
+        // The server's default can change (Settings > Model, another client): refresh what the menu shows.
+        Task { await models.load(client, force: true) }
     }
 
     /// Sends a message, creating a session first if needed. `onEvent` lets voice mode tap the stream.
