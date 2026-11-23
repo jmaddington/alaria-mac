@@ -1,9 +1,9 @@
-// Renders the Talaria app icon into an .iconset: swift scripts/make-icon.swift build/AppIcon.iconset
+// Renders the Alaria app icon into an .iconset: swift scripts/make-icon.swift build/AppIcon.iconset
 import AppKit
 let out = URL(fileURLWithPath: CommandLine.arguments[1])
 try? FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
 
-/// The Talaria mark: four tapered feathers sweeping up and back from a heel pivot, longest on top (a winged-sandal
+/// The wing mark (talaria are Hermes' winged sandals): four tapered feathers sweeping up and back from a heel pivot, longest on top (a winged-sandal
 /// wing). Unit coordinates (y up) inside `r`. Keep in sync with WingMark in Theme.swift.
 func wingFeathers(in r: NSRect) -> [NSBezierPath] {
     let pivot = NSPoint(x: r.minX + 0.80 * r.width, y: r.minY + 0.10 * r.height)

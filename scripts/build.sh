@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Build Talaria.app (SwiftPM -> bundle -> signed). Talaria is a Mac client for Hermes Agent.
+# Build Alaria.app (SwiftPM -> bundle -> signed). Alaria is a Mac client for Hermes Agent.
 #   VERSION=0.2.0 BUILD=2 ./scripts/build.sh
 #   TALARIA_SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" ./scripts/build.sh
 # CI (.github/workflows/release.yml) sets VERSION/BUILD and TALARIA_SIGN_IDENTITY from a throwaway keychain.
@@ -18,10 +18,10 @@ if ! LOG=$(swift build -c "$CONFIG" --arch arm64 --product HermesMac 2>&1); then
 fi
 BIN="$(swift build -c "$CONFIG" --arch arm64 --show-bin-path)/HermesMac"
 
-APP=build/Talaria.app
+APP=build/Alaria.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Talaria"
+cp "$BIN" "$APP/Contents/MacOS/Alaria"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
 
@@ -35,7 +35,7 @@ cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 IDENTITY=${TALARIA_SIGN_IDENTITY:-${HERMES_SIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')}}
 if [[ -n "$IDENTITY" ]]; then
-  step "Signing Talaria.app" codesign --force --options runtime --timestamp --entitlements Resources/Hermes.entitlements --sign "$IDENTITY" "$APP"
+  step "Signing Alaria.app" codesign --force --options runtime --timestamp --entitlements Resources/Hermes.entitlements --sign "$IDENTITY" "$APP"
   step "Verifying signature" codesign --verify --strict --verbose=2 "$APP"
 else
   codesign --force --options runtime --entitlements Resources/Hermes.entitlements --sign - "$APP"

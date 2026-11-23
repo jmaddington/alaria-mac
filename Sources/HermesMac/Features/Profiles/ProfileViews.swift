@@ -463,7 +463,7 @@ struct NewProfileSheet: View {
                 } else if exists {
                     Text("A profile named “\(n)” already exists.")
                 } else {
-                    Text("Talaria also gives the profile its own API key so you can chat with it right away.")
+                    Text("Alaria also gives the profile its own API key so you can chat with it right away.")
                 }
             }
             .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20)

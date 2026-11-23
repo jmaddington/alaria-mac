@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Talaria</string>
-    <key>CFBundleDisplayName</key><string>Talaria</string>
+    <key>CFBundleName</key><string>Alaria</string>
+    <key>CFBundleDisplayName</key><string>Alaria</string>
     <key>CFBundleIdentifier</key><string>net.jmaddington.hermes</string>
-    <key>CFBundleExecutable</key><string>Talaria</string>
+    <key>CFBundleExecutable</key><string>Alaria</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
@@ -14,8 +14,8 @@
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>NSMicrophoneUsageDescription</key><string>Talaria listens in voice mode so you can talk to your Hermes agent hands-free.</string>
-    <key>NSSpeechRecognitionUsageDescription</key><string>Talaria transcribes what you say in voice mode on this Mac.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Alaria listens in voice mode so you can talk to your Hermes agent hands-free.</string>
+    <key>NSSpeechRecognitionUsageDescription</key><string>Alaria transcribes what you say in voice mode on this Mac.</string>
     <!-- AIDEV-NOTE: Hermes hosts are commonly plain http on localhost or a tailnet; ATS would block those. -->
     <key>NSAppTransportSecurity</key>
     <dict>

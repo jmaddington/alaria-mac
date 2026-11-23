@@ -1,6 +1,6 @@
 #!/bin/zsh
-# Package build/Talaria.app into a drag-to-install DMG; sign, notarize and staple it when credentials are present;
-# write SHA256SUMS. Adapted from Murmur's package.sh (DMG only; Talaria has no PKG/MDM flavor).
+# Package build/Alaria.app into a drag-to-install DMG; sign, notarize and staple it when credentials are present;
+# write SHA256SUMS. Adapted from Murmur's package.sh (DMG only; Alaria has no PKG/MDM flavor).
 #
 # Env:
 #   VERSION                 version string (default: from the app's Info.plist)
@@ -11,7 +11,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source scripts/lib.sh
-APP=build/Talaria.app
+APP=build/Alaria.app
 [[ -d $APP ]] || { echo "run scripts/build.sh first"; exit 1; }
 VERSION=${VERSION:-$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" $APP/Contents/Info.plist)}
 DIST=build/dist
@@ -24,11 +24,11 @@ swift scripts/make-installer-art.swift build/art
 tiffutil -cathidpicheck build/art/dmg-background.png build/art/dmg-background@2x.png -out build/art/dmg-background.tiff >/dev/null
 
 echo "▸ DMG"
-DMG="$DIST/Talaria-$VERSION.dmg"
+DMG="$DIST/Alaria-$VERSION.dmg"
 # create-dmg lays the window out via Finder; 448 = 420 pt of content + the title bar.
-step "create-dmg" create-dmg --volname "Talaria" --volicon build/AppIcon.icns --background build/art/dmg-background.tiff \
+step "create-dmg" create-dmg --volname "Alaria" --volicon build/AppIcon.icns --background build/art/dmg-background.tiff \
   --window-pos 200 140 --window-size 660 448 --icon-size 112 --text-size 13 \
-  --icon "Talaria.app" 178 196 --hide-extension "Talaria.app" --app-drop-link 482 196 \
+  --icon "Alaria.app" 178 196 --hide-extension "Alaria.app" --app-drop-link 482 196 \
   --no-internet-enable ${DMG_NO_FINDER:+--skip-jenkins} "$DMG" "$APP" >/dev/null
 if [[ -n "$APP_ID" ]]; then step "Signing DMG" codesign --force --timestamp --sign "$APP_ID" "$DMG"; fi
 

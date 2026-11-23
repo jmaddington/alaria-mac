@@ -199,8 +199,8 @@ struct OnboardingView: View {
         VStack(spacing: 0) {
             VStack(spacing: 10) {
                 HermesMark(size: 64)
-                Text("Welcome to Talaria").font(.largeTitle.weight(.semibold))
-                Text("Connect Talaria to your Hermes agent. You'll find the keys in your Hermes home's .env file.")
+                Text("Welcome to Alaria").font(.largeTitle.weight(.semibold))
+                Text("Connect Alaria to your Hermes agent. You'll find the keys in your Hermes home's .env file.")
                     .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
             }
             .padding(.top, 34).padding(.bottom, 24)
@@ -234,6 +234,6 @@ struct HermesMark: View {
             .resizable().interpolation(.high)
             .frame(width: size * 1.25, height: size * 1.25) // the icon art carries its own inset and shadow
             .frame(width: size, height: size)
-            .accessibilityLabel("Talaria")
+            .accessibilityLabel("Alaria")
     }
 }

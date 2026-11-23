@@ -64,16 +64,16 @@ jobs:
 
       - name: Verify
         run: |
-          codesign --verify --deep --strict --verbose=2 build/Talaria.app
-          xcrun stapler validate "build/dist/Talaria-$VERSION.dmg"
-          spctl --assess --type open --context context:primary-signature -v "build/dist/Talaria-$VERSION.dmg"
+          codesign --verify --deep --strict --verbose=2 build/Alaria.app
+          xcrun stapler validate "build/dist/Alaria-$VERSION.dmg"
+          spctl --assess --type open --context context:primary-signature -v "build/dist/Alaria-$VERSION.dmg"
 
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v$VERSION"
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Talaria $VERSION" --generate-notes
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Alaria $VERSION" --generate-notes
           gh release upload "$TAG" build/dist/* --clobber
 
       - name: Clean up keychain and notary key

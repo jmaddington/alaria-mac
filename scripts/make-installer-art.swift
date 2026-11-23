@@ -1,4 +1,4 @@
-// Renders the DMG window background for Talaria: swift scripts/make-installer-art.swift build/art
+// Renders the DMG window background for Alaria: swift scripts/make-installer-art.swift build/art
 // Adapted from Murmur's installer art. Window is 660x420; icons sit at (178,196) and (482,196) from top-left.
 import AppKit
 
@@ -17,7 +17,7 @@ func png(_ w: Int, _ h: Int, scale: Int, _ draw: (CGRect) -> Void) -> Data {
     return rep.representation(using: .png, properties: [.compressionFactor: 1])!
 }
 
-// Talaria palette (matches the app icon gradient and Theme.accent).
+// Alaria palette (matches the app icon gradient and Theme.accent).
 let indigo = NSColor(srgbRed: 0.36, green: 0.39, blue: 0.96, alpha: 1)
 let deep = NSColor(srgbRed: 0.20, green: 0.17, blue: 0.55, alpha: 1)
 let teal = NSColor(srgbRed: 0.35, green: 0.90, blue: 0.95, alpha: 1)
@@ -35,7 +35,7 @@ func dmg(_ r: CGRect) {
     // Soft indigo-to-teal aurora along the top.
     NSGradient(colors: [indigo.withAlphaComponent(0.18), deep.withAlphaComponent(0.10), teal.withAlphaComponent(0.16)])!
         .draw(in: NSBezierPath(ovalIn: CGRect(x: -120, y: r.height - 170, width: r.width + 240, height: 300)), angle: 0)
-    text("Install Talaria", size: 22, weight: .bold, color: NSColor(white: 0.1, alpha: 1), center: CGPoint(x: r.midX, y: r.height - 58))
+    text("Install Alaria", size: 22, weight: .bold, color: NSColor(white: 0.1, alpha: 1), center: CGPoint(x: r.midX, y: r.height - 58))
     text("Drag the icon into Applications", size: 13, weight: .regular, color: NSColor(white: 0.45, alpha: 1), center: CGPoint(x: r.midX, y: r.height - 84))
     let y = r.height - 196
     let arrow = NSBezierPath()

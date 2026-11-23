@@ -40,6 +40,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Talaria-unsigned-${{ github.run_number }}
+          name: Alaria-unsigned-${{ github.run_number }}
           path: build/dist/*
           retention-days: 7

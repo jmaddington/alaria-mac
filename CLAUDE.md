@@ -1,7 +1,7 @@
 # Project Instructions for AI Agents
 
-**Talaria** is a native macOS client for NousResearch Hermes Agent (repo/module names still say Hermes;
-the app, bundle and process are "Talaria"; bundle id stays net.jmaddington.hermes so Keychain/defaults carry over).
+**Alaria** (renamed from Talaria 2026-11-22; that name was taken) is a native macOS client for NousResearch Hermes Agent (repo/module names still say Hermes;
+the app, bundle and process are "Alaria"; bundle id stays net.jmaddington.hermes so Keychain/defaults carry over).
 
 This file provides instructions and context for AI coding agents working on this project.
 
@@ -64,7 +64,7 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 ## Build & Test
 
 ```bash
-./scripts/build.sh                      # -> build/Talaria.app, signed with Developer ID if present
+./scripts/build.sh                      # -> build/Alaria.app, signed with Developer ID if present
 swift run hermes-checks                 # unit checks + live API checks (if dev/hermes-home/.env exists)
 HERMES_CHECK_CHAT=1 swift run hermes-checks   # + one real streamed chat turn (slow on local models)
 HERMES_CHECK_VOICE=1 swift run hermes-checks  # + offline TTS -> VAD -> on-device STT round trip
@@ -76,12 +76,12 @@ git tag v0.2.0 && git push --tags     # CI builds, signs, notarizes and publishe
 
 GUI testing (see docs/agents/gui-testing.md): launch with `open` (not the binary directly) so Hermes owns its
 mic/TCC prompts; capture only the Hermes window (`screencapture -l <id>`), never the full screen (user's
-other windows). Voice harness: `open --env HERMES_VOICE_TEST=1 build/Talaria.app`, enter voice mode (Opt-Cmd-V),
+other windows). Voice harness: `open --env HERMES_VOICE_TEST=1 build/Alaria.app`, enter voice mode (Opt-Cmd-V),
 then `swift scripts/voice-inject.swift q.aiff` feeds a file in place of the mic; verify via
 `/usr/bin/log show --predicate 'subsystem == "net.jmaddington.hermes"'` grep `VOX-HEARD` / `VOX-SPEAK`.
 
 Launch the built app against the dev server (seeds the Keychain on first run):
-`set -a; source dev/hermes-home/.env; set +a; HERMES_API_KEY=$API_SERVER_KEY HERMES_DASHBOARD_TOKEN=$HERMES_DASHBOARD_SESSION_TOKEN build/Talaria.app/Contents/MacOS/Talaria`
+`set -a; source dev/hermes-home/.env; set +a; HERMES_API_KEY=$API_SERVER_KEY HERMES_DASHBOARD_TOKEN=$HERMES_DASHBOARD_SESSION_TOKEN build/Alaria.app/Contents/MacOS/Alaria`
 
 ## Toolchain constraints (Command Line Tools only, no Xcode)
 

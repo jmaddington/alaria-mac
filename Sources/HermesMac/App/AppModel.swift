@@ -220,7 +220,7 @@ final class AppModel {
 
     /// Saves a server's settings. Editing the current server reconnects; editing another one just saves it.
     func apply(_ s: ConnectionSettings) {
-        if !s.save() { flash("Couldn't save the key to your Keychain. It will be forgotten when Talaria quits.") }
+        if !s.save() { flash("Couldn't save the key to your Keychain. It will be forgotten when Alaria quits.") }
         servers = ConnectionSettings.all()
         guard s.id == settings.id else { return }
         let serverChanged = s.apiURL != settings.apiURL || s.dashboardURL != settings.dashboardURL

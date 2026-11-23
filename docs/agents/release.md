@@ -9,7 +9,7 @@
   3. Refuses to continue unless both the signing identity and the notary key are present.
   4. `scripts/build.sh` with VERSION/BUILD, then `scripts/package.sh`: DMG, sign, notarize and staple, SHA256SUMS.
   5. Verify (codesign, stapler validate, spctl).
-  6. `gh release` uploads `Talaria-X.Y.Z.dmg` and `SHA256SUMS.txt`.
+  6. `gh release` uploads `Alaria-X.Y.Z.dmg` and `SHA256SUMS.txt`.
   7. Deletes the keychain and the notary key.
 - **Local:** `./scripts/build.sh && DMG_NO_FINDER=1 ./scripts/package.sh`. `DMG_NO_FINDER` skips create-dmg's Finder
   window layout, which pops Finder windows on a shared desktop. Notarization runs locally only if
