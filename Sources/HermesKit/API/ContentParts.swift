@@ -6,7 +6,7 @@ import Foundation
 // part list; only text + image_url/input_image parts are accepted ("file"/"input_file" -> 400
 // unsupported_content_type), image URLs must be data:image/... or http(s). Limits: 10 MB request body, 64 KiB of
 // text (silently truncated), 10 images per turn. The DB keeps user rows as TEXT: each image becomes "[screenshot]"
-// plus an "[Image attached at: <server path>]" hint, so history can never return the pixels.
+// plus an "[Image attached at: <server path>]" hint; the pixels come back only via the dashboard's /api/media (Media.swift).
 
 /// One OpenAI-style content part for a user turn.
 public enum ContentPart: Hashable, Sendable {
@@ -34,6 +34,9 @@ public struct StoredUserContent: Hashable, Sendable {
     public var text: String
     public var imageCount: Int
     public var files: [InlineFile]
+    /// Server paths from the `[Image attached at: <path>]` hints, in order; the dashboard's /api/media can serve
+    /// them while Hermes still holds the file (`cache/documents/native-inputs/...`).
+    public var imagePaths: [String] = []
 }
 
 public enum ChatContent {
@@ -109,7 +112,7 @@ public enum ChatContent {
 
     // MARK: history
 
-    private static let hintLine = try! NSRegularExpression(pattern: #"^\[Image attached(?: at)?: .+\]$"#)
+    private static let hintLine = try! NSRegularExpression(pattern: #"^\[Image attached(?: at)?: (.+)\]$"#)
     private static let markerLine = try! NSRegularExpression(pattern: #"^\[screenshot(?: detail=(?:low|high|auto))?\]$"#)
     private static let fileHeader = try! NSRegularExpression(pattern: #"^\[Attached file: (.+)\]$"#)
     private static let fenceOpen = try! NSRegularExpression(pattern: #"^(`{3,})[A-Za-z0-9]*$"#)
@@ -118,15 +121,18 @@ public enum ChatContent {
         re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s))
     }
 
-    /// Splits a stored user row back into typed text, image count and inlined files. Image markers and server-path
-    /// hints are dropped (their pixels aren't retrievable), as is Hermes' default prompt for image-only turns.
+    /// Splits a stored user row back into typed text, image count, server image paths and inlined files. Image markers
+    /// and path hints leave the text, as does Hermes' default prompt for image-only turns.
     public static func parseStored(_ content: String) -> StoredUserContent {
         let lines = content.components(separatedBy: "\n")
-        var kept: [String] = [], files: [InlineFile] = []
+        var kept: [String] = [], files: [InlineFile] = [], paths: [String] = []
         var hints = 0, markers = 0, i = 0
         while i < lines.count {
             let line = lines[i]
-            if matches(hintLine, line) != nil { hints += 1; i += 1; continue }
+            if let h = matches(hintLine, line) {
+                if let r = Range(h.range(at: 1), in: line) { paths.append(String(line[r])) }
+                hints += 1; i += 1; continue
+            }
             if matches(markerLine, line) != nil { markers += 1; i += 1; continue }
             if let h = matches(fileHeader, line), i + 1 < lines.count, let f = matches(fenceOpen, lines[i + 1]),
                let nameRange = Range(h.range(at: 1), in: line), let fenceRange = Range(f.range(at: 1), in: lines[i + 1]) {
@@ -143,7 +149,7 @@ public enum ChatContent {
         let images = max(hints, markers)
         var text = kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         if images > 0 && text == serverDefaultImagePrompt { text = "" }
-        return StoredUserContent(text: text, imageCount: images, files: files)
+        return StoredUserContent(text: text, imageCount: images, files: files, imagePaths: paths)
     }
 
     /// Image URLs and text from a part list, for servers that return user content as parts rather than text.

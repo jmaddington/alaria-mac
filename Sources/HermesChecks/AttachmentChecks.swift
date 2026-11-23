@@ -117,6 +117,11 @@ private func liveAttachmentChecks(_ c: HermesClient, png: Data) async {
             let user = msgs.first { $0.role == "user" }
             let parsed = ChatContent.parseStored(user?.content ?? "")
             expect(parsed.imageCount == 1 && parsed.text == "Reply with exactly: pong", "stored: \(user?.content ?? "nil")")
+            // History thumbnails: the stored path comes back through the dashboard's /api/media (hermes-mac-p81).
+            if let path = parsed.imagePaths.first {
+                let m = try await c.media(path: path)
+                expect(m.mime.hasPrefix("image/") && !m.data.isEmpty, "media: \(m.mime) \(m.data.count) bytes")
+            } else { expect(false, "no image path in \(user?.content ?? "nil")") }
             try await c.deleteSession(s.id)
         }
     }

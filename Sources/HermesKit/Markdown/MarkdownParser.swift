@@ -10,6 +10,8 @@ public enum MDBlock: Hashable, Sendable {
     case code(lang: String, body: String)
     case rule
     case table(header: [String], rows: [[String]])
+    /// A picture pulled out of a paragraph line: `![alt](url)`, a `MEDIA:/path` tag or a bare image URL (ChatImages.swift).
+    case image(alt: String, ref: ImageRef)
 }
 
 /// A list item; indented sub-items are kept one level deep (enough for chat replies).
@@ -56,8 +58,10 @@ public enum MarkdownParser {
             return (true, Int(digits) ?? 1, String(after.dropFirst(2)))
         }
 
-        for raw in text.components(separatedBy: "\n") {
-            let expanded = raw.replacingOccurrences(of: "\t", with: "    ")
+        // Byte-level line split and tab check: replies can carry multi-MB data-URL images on one line (ChatImages.swift).
+        for rawBytes in text.utf8.split(separator: 0x0A, omittingEmptySubsequences: false) {
+            let raw = String(Substring(rawBytes))
+            let expanded = raw.utf8.contains(0x09) ? raw.replacingOccurrences(of: "\t", with: "    ") : raw
             let indent = expanded.prefix { $0 == " " }.count
             let line = expanded.trimmingCharacters(in: .whitespaces)
 
@@ -87,7 +91,7 @@ public enum MarkdownParser {
                 continue
             }
             if !tableRows.isEmpty { flushTable() }
-            if line.count >= 3, line.allSatisfy({ $0 == "-" || $0 == "*" || $0 == "_" || $0 == " " }),
+            if line.utf8.count >= 3, line.utf8.count <= 200, line.allSatisfy({ $0 == "-" || $0 == "*" || $0 == "_" || $0 == " " }),
                Set(line.filter { $0 != " " }).count == 1 {
                 flush(); blocks.append(.rule); continue
             }
@@ -106,6 +110,15 @@ public enum MarkdownParser {
                 if items.isEmpty {
                     if !para.isEmpty || !quote.isEmpty { flush() }
                     ordered = m.ordered; start = m.number
+                }
+                if ImageScan.mightContainImage(m.rest) {
+                    // "1. MEDIA:/x.png": the item keeps its text, the picture follows the list (which resumes after it).
+                    let segs = ImageScan.split(m.rest)
+                    let text = segs.compactMap { if case .text(let t) = $0 { return t }; return nil }.joined(separator: " ")
+                    items.append(MDListItem(text: text))
+                    flushList()
+                    for case .image(let alt, let ref) in segs { blocks.append(.image(alt: alt, ref: ref)) }
+                    continue
                 }
                 items.append(MDListItem(text: m.rest)); pendingBlank = false
                 continue
@@ -126,6 +139,16 @@ public enum MarkdownParser {
                 quote.append(String(line.dropFirst()).trimmingCharacters(in: .whitespaces)); continue
             }
             if !quote.isEmpty { flush() }
+            if ImageScan.mightContainImage(line) {
+                // Images become their own blocks; the text around them stays in the paragraph flow.
+                for seg in ImageScan.split(line) {
+                    switch seg {
+                    case .text(let t): if !t.isEmpty { para.append(t) }
+                    case .image(let alt, let ref): flush(); blocks.append(.image(alt: alt, ref: ref))
+                    }
+                }
+                continue
+            }
             para.append(line)
         }
         if let f = fence { flush(); blocks.append(.code(lang: f.lang, body: f.body.joined(separator: "\n"))) }
