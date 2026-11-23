@@ -300,8 +300,10 @@ struct ProfileKeySheet: View {
                     Text("Create a key for this profile").font(.headline)
                     Text("Writes a new random key into the profile's .env through the dashboard and saves it in your Keychain. Takes effect right away.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    // AIDEV-NOTE: Return must never rotate the key when one was typed below (it did: 2026-11-22).
                     Button("Create Key and Switch") { run { try await ps.provisionKey(for: name) } }
-                        .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(manualKey.isEmpty ? KeyboardShortcut.defaultAction : nil)
                 }.padding(6).frame(maxWidth: .infinity, alignment: .leading)
             }
             GroupBox {
@@ -309,10 +311,8 @@ struct ProfileKeySheet: View {
                     Text("Or use the key it already has").font(.headline)
                     HStack {
                         SecureField("API_SERVER_KEY from the profile's .env", text: $manualKey)
-                        Button("Save") {
-                            run { guard ps.saveKey(manualKey.trimmingCharacters(in: .whitespacesAndNewlines), for: name) else {
-                                throw HermesError(status: 0, message: "Couldn't save the key to your Keychain") } }
-                        }.disabled(manualKey.trimmingCharacters(in: .whitespaces).count < 16)
+                            .onSubmit { if manualKeyValid { saveManualKey() } }
+                        Button("Save") { saveManualKey() }.disabled(!manualKeyValid)
                     }
                 }.padding(6).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -327,6 +327,13 @@ struct ProfileKeySheet: View {
         .padding(22)
         .frame(width: 480)
         .disabled(busy)
+    }
+
+    private var manualKeyValid: Bool { manualKey.trimmingCharacters(in: .whitespaces).count >= 16 }
+    private func saveManualKey() {
+        let ps = model.profiles
+        run { guard ps.saveKey(manualKey.trimmingCharacters(in: .whitespacesAndNewlines), for: name) else {
+            throw HermesError(status: 0, message: "Couldn't save the key to your Keychain") } }
     }
 
     private func run(_ body: @escaping () async throws -> Void) {

@@ -335,6 +335,11 @@ struct EntryView: View {
                         icon: { Image(systemName: "bolt.fill") }
                         .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
                 }
+                if let c = entry.expiredApproval {
+                    Label { Text("Approval expired, not run: ") + Text(c).font(.system(.caption, design: .monospaced)) }
+                        icon: { Image(systemName: "clock.badge.xmark") }
+                        .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
                 if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
                 if !entry.text.isEmpty { MarkdownView(text: entry.streaming ? Self.holdBackPartialMarker(entry.text) : Self.trimDanglingMarker(entry.text)) }
                 else if entry.streaming && entry.thinking.isEmpty && entry.tools.isEmpty { TypingIndicator() }

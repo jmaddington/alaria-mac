@@ -14,6 +14,8 @@ struct ChatEntry: Identifiable, Equatable {
     var approval: ApprovalRequest?
     /// Commands YOLO answered "once" for, shown under the reply as an audit trail.
     var autoApproved: [String] = []
+    /// An approval still unanswered when its run ended (Hermes timed it out); shown instead of a dead card.
+    var expiredApproval: String?
     var answeringApproval = false
     var streaming = false
     var error: String?
@@ -193,6 +195,11 @@ final class ChatStore {
             } catch is CancellationError {
             } catch {
                 if !Task.isCancelled { failure = error; update(replyID) { $0.error = error.localizedDescription } }
+            }
+            // A run can't wait on an approval once it has ended: Hermes timed it out (or the run stopped).
+            if let a = entries.first(where: { $0.id == replyID })?.approval {
+                update(replyID) { $0.approval = nil; $0.expiredApproval = a.command ?? a.description ?? "a command" }
+                app?.notifier.approvalResolved(a)
             }
             update(replyID) { $0.streaming = false }
             if let sessionID { app?.notifier.replyEnded(session: sessionID, entry: replyID, cancelled: Task.isCancelled) }
