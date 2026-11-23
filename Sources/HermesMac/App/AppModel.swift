@@ -295,7 +295,7 @@ final class AppModel {
         if case .failed = connection { connect(); return }
         Task {
             switch section ?? .chats {
-            case .chats: await chats.reload()
+            case .chats: await chats.refresh() // list + open chat (live run or history), with a "Refreshed" toast
             case .skills: await library.loadSkills()
             case .scheduled: await library.loadJobs()
             case .tools: await library.loadToolsets()

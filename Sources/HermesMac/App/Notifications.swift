@@ -124,7 +124,7 @@ final class Notifier {
     func replyEnded(session: String, entry: String, cancelled: Bool) {
         clearApprovals(entry: entry)
         guard let app, !app.voice.isActive else { return } // voice mode speaks the reply already
-        let e = app.chats.entries.first { $0.id == entry }
+        let e = app.chats.entry(entry) // also finds a background chat's live reply
         guard let outcome = NotificationRules.replyOutcome(cancelled: cancelled, error: e?.error),
               NotificationRules.shouldNotify(enabled: NotificationKind.replies.isEnabled, appActive: appActive,
                                              viewingChat: isViewingChat(session)) else { return }
