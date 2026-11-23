@@ -25,12 +25,16 @@ extension ProfileStore {
 }
 
 extension ChatStore {
-    /// Composer entry point: honours an @profile mention (see MentionRoute), otherwise a plain send().
-    func sendRouted(_ raw: String, attachments atts: [Attachment] = []) {
+    /// Composer entry point: honours an @profile mention (see MentionRoute), otherwise a plain send(); while the
+    /// open chat's reply runs, `busyMode` (nil = the Settings default) decides queue / steer / stop-and-send.
+    func sendRouted(_ raw: String, attachments atts: [Attachment] = [], busyMode: BusyInputMode? = nil) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let app, !text.isEmpty || !atts.isEmpty, !isStreaming else { return }
+        guard let app, !text.isEmpty || !atts.isEmpty else { return }
         // Attachments travel with the message, including into a new chat in another profile.
-        func deliver() { if send(text, attachments: atts) { self.attachments.clear() } }
+        func deliver() {
+            let sent = isStreaming ? sendBusy(text, attachments: atts, mode: busyMode) : send(text, attachments: atts)
+            if sent { self.attachments.clear() }
+        }
         let profiles = app.profiles
         switch profiles.route(for: text, inChat: selection != nil) {
         case .none, .here: deliver()

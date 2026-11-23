@@ -161,7 +161,7 @@ public final class HermesClient: Sendable {
                         case "approval.request":
                             let choices = (o["choices"] as? [String]) ?? ["once", "session", "always", "deny"]
                             cont.yield(.approval(ApprovalRequest(runId: o["run_id"] as? String ?? runId,
-                                                                 requestId: o["request_id"] as? String,
+                                                                 requestId: (o["request_id"] as? String) ?? (o["prompt_id"] as? String), // authority servers send prompt_id
                                                                  command: o["command"] as? String,
                                                                  description: o["description"] as? String,
                                                                  choices: choices,
