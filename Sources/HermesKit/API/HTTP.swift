@@ -182,6 +182,9 @@ public final class HTTPCore: Sendable {
 public struct SSEFrame: Sendable {
     public var event: String
     public var data: Data
+    /// The frame's `id:` line (the event seq on `/v1/runs/{id}/events`); nil when the server sent none.
+    public var id: String? = nil
+    public init(event: String, data: Data, id: String? = nil) { self.event = event; self.data = data; self.id = id }
     public func decode<T: Decodable>(_ t: T.Type) -> T? { try? HTTPCore.decoder.decode(T.self, from: data) }
     public var object: [String: Any]? { (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] }
 }
@@ -208,6 +211,7 @@ public struct SSELineSplitter: Sendable {
 public struct SSEParser: Sendable {
     var event = "message"
     var data: [String] = []
+    var id: String?
     public init() {}
 
     public mutating func feed(_ raw: String) -> SSEFrame? {
@@ -222,7 +226,9 @@ public struct SSEParser: Sendable {
         }()
         switch field {
         case "event":
+            let keep = data.isEmpty ? id : nil // `id:` then `event:` belong to the same (new) frame
             let out = flush()
+            id = keep
             event = value
             return out
         case "data":
@@ -230,14 +236,20 @@ public struct SSEParser: Sendable {
             let out = data.isEmpty ? nil : flush()
             data.append(value)
             return out
-        default: return nil // id:, retry:
+        case "id":
+            // Hermes writes `id:` FIRST in a frame (api_server._sse_frame), so pending data means the previous
+            // frame lost its blank separator: flush it before taking the new id.
+            let out = data.isEmpty ? nil : flush()
+            id = value
+            return out
+        default: return nil // retry:
         }
     }
 
     mutating func flush() -> SSEFrame? {
-        defer { event = "message"; data = [] }
+        defer { event = "message"; data = []; id = nil }
         guard !data.isEmpty else { return nil }
-        return SSEFrame(event: event, data: Data(data.joined(separator: "\n").utf8))
+        return SSEFrame(event: event, data: Data(data.joined(separator: "\n").utf8), id: id)
     }
 }
 
