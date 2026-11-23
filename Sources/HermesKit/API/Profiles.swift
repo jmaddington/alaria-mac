@@ -25,10 +25,10 @@ public struct HermesProfile: Codable, Identifiable, Hashable, Sendable {
     public var id: String { name }
     public init(name: String, model: String? = nil, description: String? = nil) { self.name = name; self.model = model; self.description = description }
 
-    /// "default" reads better as "Default"; a user-set display name wins.
+    /// Display only: first letter capitalized ("work" -> "Work", talaria-ios-i0j); a user-set display name wins.
     public var label: String {
         if let d = displayName, !d.isEmpty { return d }
-        return name == "default" ? "Default" : name
+        return name.prefix(1).uppercased() + name.dropFirst()
     }
 
     /// Profile ids are lowercase on disk; the server normalizes case the same way.

@@ -61,6 +61,12 @@ func runProfileChecks() {
         expect(ProfileMention.suggestions("wo", in: ps).map(\.name) == ["work", "homework"], "prefix first")
         expect(ProfileMention.suggestions("", in: ps).count == 3)
     }
+    check("profile labels capitalize for display only (talaria-ios-i0j)") {
+        expect(HermesProfile(name: "default").label == "Default")
+        expect(HermesProfile(name: "work").label == "Work")
+        expect(HermesProfile(name: "my-team").label == "My-team")
+        expect(HermesProfile(name: "work").name == "work", "routing name unchanged")
+    }
     check("profile error codes") {
         let e = HermesError.from(status: 404, data: Data(#"{"error":"Unknown or unconfigured profile","code":"profile_unknown"}"#.utf8))
         expect(e.isProfileNotServed && e.code == "profile_unknown")
