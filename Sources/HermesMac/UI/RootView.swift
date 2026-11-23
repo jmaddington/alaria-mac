@@ -19,6 +19,9 @@ struct RootView: View {
     @Environment(AppModel.self) private var model
     @ViewState private var columns = NavigationSplitViewVisibility.all
     @ViewState private var columnsBeforeBrowser: NavigationSplitViewVisibility?
+    /// What to restore when the list column comes back (NavigationSplitView can't hide only the middle column,
+    /// so "hide the list" is .detailOnly; the system sidebar button still toggles just the far-left column).
+    @ViewState private var columnsBeforeFocus: NavigationSplitViewVisibility = .all
     @ViewState private var frameBeforeBrowser: NSRect?
 
     var body: some View {
@@ -32,7 +35,17 @@ struct RootView: View {
                 .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 420)
         } detail: {
             detail.id(model.profiles.current)
-                .toolbar { ToolbarItem(placement: .primaryAction) { BrowserToolbarButton() } }
+                .toolbar {
+                    ToolbarItem(placement: .navigation) {
+                        let hidden = columns == .detailOnly
+                        Button { toggleList() } label: {
+                            Label(hidden ? "Show List" : "Hide List", systemImage: hidden ? "sidebar.squares.left" : "rectangle.leadinghalf.inset.filled")
+                        }
+                        .help(hidden ? "Show the sidebar and list (⌥⌘S)" : "Hide the sidebar and list (⌥⌘S)")
+                        .keyboardShortcut("s", modifiers: [.command, .option])
+                    }
+                    ToolbarItem(placement: .primaryAction) { BrowserToolbarButton() }
+                }
                 .environment(\.openURL, OpenURLAction { url in
                     // Chat links open in the browser panel (Settings › Browser); ⌘-click keeps the default browser.
                     guard UserDefaults.standard.object(forKey: "browser.openChatLinks") as? Bool ?? true,
@@ -50,7 +63,7 @@ struct RootView: View {
             if open {
                 let before = (NSApp.keyWindow ?? NSApp.mainWindow)?.frame
                 if Self.growWindow(by: 480) { frameBeforeBrowser = before }
-                else { columnsBeforeBrowser = columns; withAnimation(.smooth) { columns = .doubleColumn } }
+                else if columns != .detailOnly { columnsBeforeBrowser = columns; withAnimation(.smooth) { columns = .doubleColumn } }
             } else {
                 if let f = frameBeforeBrowser, let w = NSApp.keyWindow ?? NSApp.mainWindow { w.setFrame(f, display: true, animate: true) }
                 frameBeforeBrowser = nil
@@ -64,6 +77,13 @@ struct RootView: View {
         .toolbar(model.voice.isActive || isVoiceError ? .hidden : .automatic, for: .windowToolbar)
         .sheet(isPresented: $model.showOnboarding) { OnboardingView().environment(model) }
         .profileSheets(model)
+    }
+
+    private func toggleList() {
+        withAnimation(.smooth) {
+            if columns == .detailOnly { columns = columnsBeforeFocus == .detailOnly ? .all : columnsBeforeFocus }
+            else { columnsBeforeFocus = columns; columns = .detailOnly }
+        }
     }
 
     private var isVoiceError: Bool { if case .error = model.voice.phase { return true }; return false }
