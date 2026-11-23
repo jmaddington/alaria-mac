@@ -24,6 +24,21 @@ struct LoadedImage: @unchecked Sendable {
 /// dashboard's authenticated /api/media (HermesClient.media). Data URLs: decoded locally. Never file://.
 // AIDEV-NOTE: security. The only request that carries a token is HermesClient.media (configured dashboard host).
 // Remote fetches must never reuse HTTPCore's sessions or add auth headers: a reply can name any URL.
+/// Refuses redirects that leave the consented URL's host (or downgrade from https).
+final class SameHostRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        let from = task.originalRequest?.url, to = request.url
+        let sameHost = from?.host()?.lowercased() == to?.host()?.lowercased()
+        let downgrade = from?.scheme?.lowercased() == "https" && to?.scheme?.lowercased() != "https"
+        guard sameHost, !downgrade else {
+            imgLog.error("remote image redirect to another host refused [ALR-IMG-REDIRECT]")
+            return nil
+        }
+        return request
+    }
+}
+
 enum ReplyImageLoader {
     static let maxBytes = 25_000_000
     nonisolated(unsafe) private static let cache: NSCache<NSString, Box> = {
@@ -79,13 +94,24 @@ enum ReplyImageLoader {
         case .remote(let url):
             var req = URLRequest(url: url)
             req.setValue("image/*", forHTTPHeaderField: "Accept")
-            let (d, resp) = try await remoteSession.data(for: req)
+            // AIDEV-NOTE: security. Consent is per URL, so redirects to another host are refused (SameHostRedirects),
+            // and the size cap is enforced while streaming, not after buffering (security review 2026-11-22).
+            let (bytes, resp) = try await remoteSession.bytes(for: req, delegate: SameHostRedirects())
             guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
                 imgLog.error("remote image \(url.host() ?? "?", privacy: .public) -> HTTP \(code) [ALR-IMG-REMOTE-HTTP]")
                 throw AttachmentError(message: "The image couldn't be downloaded (HTTP \(code)).")
             }
-            guard d.count <= maxBytes else { throw AttachmentError(message: "The image is too large to show.") }
+            guard (http.mimeType ?? "").lowercased().hasPrefix("image/") else {
+                throw AttachmentError(message: "That link isn't an image.")
+            }
+            guard http.expectedContentLength <= Int64(maxBytes) else { throw AttachmentError(message: "The image is too large to show.") }
+            var d = Data()
+            if http.expectedContentLength > 0 { d.reserveCapacity(Int(http.expectedContentLength)) }
+            for try await b in bytes {
+                d.append(b)
+                if d.count > maxBytes { throw AttachmentError(message: "The image is too large to show.") }
+            }
             (mime, data) = (http.mimeType ?? "image/png", d)
         }
         let image = try await Task.detached(priority: .userInitiated) { () throws -> NSImage in
