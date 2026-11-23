@@ -36,6 +36,18 @@ public enum NotificationRules {
         return String(s.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
     }
 
+    /// Approval banner text. `exactCommand` is true only when the body IS the full command, byte for byte: one line,
+    /// at most `limit` characters, no control characters, nothing stripped. Only then may the banner offer Allow Once.
+    // AIDEV-NOTE: security review; never approve something the user couldn't read in full on the banner.
+    public static func approvalBody(command: String?, description: String?, limit: Int = 200) -> (body: String, exactCommand: Bool) {
+        if let c = command, !c.isEmpty, c.count <= limit,
+           !c.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) }),
+           c.trimmingCharacters(in: .whitespaces) == c {
+            return (c, true)
+        }
+        return (preview(command ?? description ?? "Hermes wants to run a command.", limit: limit), false)
+    }
+
     /// Parses Hermes timestamps: Python `isoformat()` gives 6 fractional digits ("...T10:00:00.123456-05:00"),
     /// which ISO8601DateFormatter rejects, so the fraction is cut to milliseconds first.
     public static func parseDate(_ s: String?) -> Date? {

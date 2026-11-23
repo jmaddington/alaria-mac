@@ -39,6 +39,8 @@ final class Notifier {
     @ObservationIgnored private var pending: [String: (request: ApprovalRequest, entry: String, session: String)] = [:]
 
     static let approvalCategory = "approval"
+    /// Same, but Deny only: the banner couldn't show the full command (NotificationRules.approvalBody).
+    static let approvalDenyOnlyCategory = "approval.denyOnly"
     static let allowOnceAction = "approval.once"
     static let denyAction = "approval.deny"
 
@@ -51,10 +53,13 @@ final class Notifier {
         guard let center else { return }
         delegate.notifier = self
         center.delegate = delegate // set before launch finishes so a click that launched the app is delivered
-        let allow = UNNotificationAction(identifier: Self.allowOnceAction, title: "Allow Once", options: [])
+        // AIDEV-NOTE: security; Allow Once needs an unlocked Mac and is only offered when the body is the exact command.
+        let allow = UNNotificationAction(identifier: Self.allowOnceAction, title: "Allow Once", options: [.authenticationRequired])
         let deny = UNNotificationAction(identifier: Self.denyAction, title: "Deny", options: [.destructive])
-        center.setNotificationCategories([UNNotificationCategory(identifier: Self.approvalCategory, actions: [allow, deny],
-                                                                 intentIdentifiers: [], options: [])])
+        center.setNotificationCategories([
+            UNNotificationCategory(identifier: Self.approvalCategory, actions: [allow, deny], intentIdentifiers: [], options: []),
+            UNNotificationCategory(identifier: Self.approvalDenyOnlyCategory, actions: [deny], intentIdentifiers: [], options: []),
+        ])
         Task { await refreshAuthorization() }
     }
 
@@ -136,9 +141,10 @@ final class Notifier {
                                              viewingChat: isViewingChat(session)) else { return }
         let id = "approval.\(a.id)"
         pending[id] = (a, entry, session)
-        let what = NotificationRules.preview(a.command ?? a.description ?? "Hermes wants to run a command.", limit: 200)
+        let (what, exact) = NotificationRules.approvalBody(command: a.command, description: a.description)
         post(.approvals, id: id, title: "Approval needed", subtitle: chatTitle(session), body: what,
-             info: ["session": session], category: Self.approvalCategory)
+             info: ["session": session, "exact": exact ? "1" : "0"],
+             category: exact ? Self.approvalCategory : Self.approvalDenyOnlyCategory)
     }
 
     /// Answered in the app (or from the banner): drop it so the banner can't answer twice.
@@ -231,6 +237,8 @@ final class Notifier {
                 return
             }
             let choice = action == Self.allowOnceAction ? "once" : "deny"
+            // Defense in depth: a stale category registration must not allow a command the banner truncated.
+            if choice == "once", info["exact"] != "1" { bringToFront(); openChat(p.session); return }
             guard p.request.choices.contains(choice) else { bringToFront(); openChat(p.session); return }
             notifLog.info("approval answered from notification choice=\(choice, privacy: .public) [ALR-NOTIF-ANSWER]")
             pending[notificationID] = nil
