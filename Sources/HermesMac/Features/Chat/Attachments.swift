@@ -22,6 +22,8 @@ struct Attachment: Identifiable, Equatable {
     /// Encoded image bytes or UTF-8 text. nil for an image reloaded from history: Hermes keeps only a server path.
     var data: Data?
     var thumbnail: NSImage?
+    /// For a history image: where Hermes stored it, fetched lazily through the dashboard (ReplyImages.swift).
+    var serverPath: String? = nil
 
     var isImage: Bool { if case .image = kind { return true }; return false }
     var text: String? { kind == .text ? data.flatMap { String(data: $0, encoding: .utf8) } : nil }
@@ -53,7 +55,8 @@ struct Attachment: Identifiable, Equatable {
         }
         let stored = ChatContent.parseStored(m.content ?? "")
         let images = (0..<stored.imageCount).map { i in
-            Attachment(name: stored.imageCount == 1 ? "Image" : "Image \(i + 1)", kind: .image(mime: "image/png"), data: nil)
+            Attachment(name: stored.imageCount == 1 ? "Image" : "Image \(i + 1)", kind: .image(mime: "image/png"), data: nil,
+                       serverPath: i < stored.imagePaths.count ? stored.imagePaths[i] : nil)
         }
         return (stored.text, images + stored.files.map(file))
     }
@@ -448,7 +451,9 @@ struct MessageAttachmentsView: View {
     var body: some View {
         FlowLayout(spacing: 8) {
             ForEach(attachments) { a in
-                if a.isImage, a.thumbnail != nil { ImageThumb(attachment: a) } else { AttachmentChip(attachment: a) }
+                if a.isImage, a.thumbnail != nil { ImageThumb(attachment: a) }
+                else if a.isImage, let p = a.serverPath, ImageRef.hasImageExtension(p) { StoredImageThumb(attachment: a, path: p) }
+                else { AttachmentChip(attachment: a) }
             }
         }
     }

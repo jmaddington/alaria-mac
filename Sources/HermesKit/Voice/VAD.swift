@@ -120,7 +120,10 @@ public struct SentenceSplitter: Sendable {
     }
 
     public static func clean(_ s: String) -> String? {
-        var t = s.replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
+        // Images aren't read aloud: `![alt](url)` (often a multi-MB data URL) and `MEDIA:/path` tags (ChatImages.swift).
+        var t = s.replacingOccurrences(of: #"!\[[^\]]*\]\([^)]*\)"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"(?i)(?<![A-Za-z0-9])MEDIA:\s*\S+"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"\[([^\]]*)\]\([^)]*\)"#, with: "$1", options: .regularExpression)
         t = t.replacingOccurrences(of: #"[*`#>|]"#, with: "", options: .regularExpression)
         // Underscores only as emphasis markers; keep snake_case and URLs intact.
         t = t.replacingOccurrences(of: #"(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])"#, with: "", options: .regularExpression)

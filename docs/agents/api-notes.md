@@ -31,8 +31,8 @@ sessions whose source is not `api_server` or `bot_room`. Never send `source`; th
   `file`/`input_file` and non-image data URLs -> 400 `unsupported_content_type`. No upload endpoint on the API server.
 - Limits: 10 MB request body (413 `body_too_large`), 64 KiB text (silently truncated), 10 images/turn,
   `gateway.max_inbound_media_bytes` (default 128 MB). Image-only turns get the text "What do you see in this image?".
-- Stored user rows are TEXT: each image -> `[Image attached at: <server path>]` + `[screenshot]` lines; history can't
-  return pixels. Text files are inlined client-side as `[Attached file: name]` + fenced block (ContentParts.swift).
+- Stored user rows are TEXT: each image -> `[Image attached at: <server path>]` + `[screenshot]` lines (path under
+  `cache/documents/native-inputs/`); the pixels come back via dashboard `/api/media` while Hermes keeps the file. Text files are inlined client-side as `[Attached file: name]` + fenced block (ContentParts.swift).
 
 ## Profiles (verified 2026-11-22, bead hermes-mac-zc9)
 - A profile = a separate HERMES_HOME (`<root>/profiles/<name>/`): own config.yaml/model, .env, skills, memory,
@@ -64,3 +64,15 @@ sessions whose source is not `api_server` or `bot_room`. Never send `source`; th
   assistant.completed / run.completed carry the effective runtime.
 - No API-server route for /compress, /undo, /rewind, /yolo (store has set_yolo, no HTTP route), /queue, /bg, /btw,
   /goal, /personality, /verbose, /rollback, /diff.
+
+## Images from Hermes (verified 2026-11-22 on the dev server, bead hermes-mac-p81)
+- The agent delivers a host file as `MEDIA:/abs/path.png`. Only the FINAL reply (`assistant.completed.content`,
+  `/chat`, `/v1/*`) rewrites image tags (png/jpg/jpeg/gif/webp/bmp, <= 5 MB) into `![image](data:image/...;base64,...)`.
+  `assistant.delta` and stored history (`GET /api/sessions/{id}/messages`, `run.completed.messages`) keep raw `MEDIA:`.
+- Dashboard `GET /api/media?path=<abs>` -> `{data_url}`; image extensions only (415), under
+  `<HERMES_HOME>/{images,screenshots,cache}` (403 elsewhere), 404 gone, 413 > 25 MB. `/api/media/proxy?url=` fetches
+  FAL/GCS hosts only. The API server has no file route.
+- image_gen returns JSON `{success, image: <url or abs path>}` to the MODEL; `tool.completed` carries no result
+  (`preview`/`args` null), so the picture reaches clients only if the model writes `MEDIA:` or `![](url)`.
+- Client: `HermesKit/Markdown/ChatImages.swift` (parse) + `HermesMac/UI/ReplyImages.swift` (load/render). Remote
+  http(s) images wait for a click unless `chat.loadRemoteImages` (tracking/exfil links); file:// is never loaded.

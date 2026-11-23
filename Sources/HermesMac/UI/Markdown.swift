@@ -6,7 +6,19 @@ import SwiftUI
 /// only, so blocks (headings, lists, quotes, fenced code, rules, tables-as-monospace) are parsed here.
 // AIDEV-NOTE: deliberately small; streaming text re-parses each delta, so keep parse() linear and allocation-light.
 enum Markdown {
-    static func parse(_ text: String) -> [MDBlock] { MarkdownParser.parse(text) }
+    static func parse(_ text: String) -> [MDBlock] {
+        // AIDEV-NOTE: completed replies can hold multi-MB data-URL images (server-inlined MEDIA: tags); re-parsing
+        // those on every render cost ~0.1-0.2 s in debug builds. Big texts are memoised (full-string key, so exact).
+        guard text.utf8.count > 64_000 else { return MarkdownParser.parse(text) }
+        return MainActor.assumeIsolated {
+            if let hit = bigParses[text] { return hit }
+            let blocks = MarkdownParser.parse(text)
+            if bigParses.count >= 16 { bigParses.removeAll(keepingCapacity: true) }
+            bigParses[text] = blocks
+            return blocks
+        }
+    }
+    @MainActor private static var bigParses: [String: [MDBlock]] = [:]
 
     /// Inline styling for model output. Links are untrusted: only http(s) and mailto survive; anything else
     /// (file://, app URL schemes) is rendered as plain text so a click can't launch it.
@@ -88,6 +100,8 @@ struct MarkdownView: View {
             CodeBlock(lang: lang, code: body)
         case .rule:
             Divider().padding(.vertical, 4)
+        case .image(let alt, let ref):
+            ReplyImageView(alt: alt, ref: ref)
         case .table(let header, let rows):
             ScrollView(.horizontal, showsIndicators: false) {
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 8) {
