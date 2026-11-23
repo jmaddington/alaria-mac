@@ -12,6 +12,8 @@ struct ChatEntry: Identifiable, Equatable {
     var thinking: String = ""
     var tools: [ToolActivity] = []
     var approval: ApprovalRequest?
+    /// Commands YOLO answered "once" for, shown under the reply as an audit trail.
+    var autoApproved: [String] = []
     var answeringApproval = false
     var streaming = false
     var error: String?
@@ -137,6 +139,7 @@ final class ChatStore {
         messagesError = nil
         cancelStream()
         selection = nil
+        yoloNewChat = false
         loadedFor = nil
         entries = []
         draft = ""
@@ -165,11 +168,15 @@ final class ChatStore {
                 if let s = selection { sid = s } else {
                     let s = try await client.createSession(title: nil)
                     sid = s.id
+                    if yoloNewChat { setYolo(true, for: sid); yoloNewChat = false }
                     selection = sid
                     loadedFor = sid
                     sessions.insert(s, at: 0)
                 }
                 for try await e in client.chatStream(session: sid, parts: parts) {
+                    if case .approval(let a) = e, isYolo(sid), a.choices.contains("once") {
+                        autoApprove(a, entry: replyID); continue
+                    }
                     apply(e, to: replyID)
                     onEvent?(e)
                 }
@@ -242,6 +249,45 @@ final class ChatStore {
             } catch {
                 update(entry) { $0.answeringApproval = false }
                 app?.flash("Approval wasn't sent: \(error.localizedDescription). Try again.")
+            }
+        }
+    }
+
+    // MARK: YOLO (per chat, client-side)
+
+    // AIDEV-NOTE: security. Hermes can't do per-chat YOLO for API-server chats: each turn's approval key is its
+    // run_id and the session row's yolo flag (set via /api/ws config.set) is never read on that path (investigated
+    // 2026-11-22, hermes-mac-1pt). So the app answers "once" itself, only for streams it is watching, and logs each.
+    /// YOLO for the chat that isn't created yet; applied when its session is.
+    var yoloNewChat = false
+    private var yoloVersion = 0 // UserDefaults isn't observed; bump to refresh views
+    private var yoloKey: String { "chats.yolo" + ConnectionSettings.scope + (client?.profile.map { ".\($0)" } ?? "") }
+
+    func isYolo(_ sid: String?) -> Bool {
+        _ = yoloVersion
+        guard let sid else { return yoloNewChat }
+        return (UserDefaults.standard.stringArray(forKey: yoloKey) ?? []).contains(sid)
+    }
+
+    func setYolo(_ on: Bool, for sid: String?) {
+        guard let sid else { yoloNewChat = on; return }
+        var ids = (UserDefaults.standard.stringArray(forKey: yoloKey) ?? []).filter { $0 != sid }
+        if on { ids.insert(sid, at: 0) }
+        UserDefaults.standard.set(Array(ids.prefix(500)), forKey: yoloKey)
+        yoloVersion += 1
+    }
+
+    private func autoApprove(_ a: ApprovalRequest, entry: String) {
+        guard let client else { return }
+        let what = a.command ?? a.description ?? "a command"
+        Task {
+            do {
+                try await client.answerApproval(a, choice: "once")
+                update(entry) { $0.autoApproved.append(what) }
+            } catch {
+                // Fall back to asking, so the run is never left blocked.
+                update(entry) { $0.approval = a }
+                app?.flash("YOLO couldn't auto-approve: \(error.localizedDescription). Answer it in the chat.")
             }
         }
     }

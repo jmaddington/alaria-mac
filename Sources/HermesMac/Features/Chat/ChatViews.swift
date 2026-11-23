@@ -227,6 +227,7 @@ struct ConversationView: View {
         .navigationTitle(chats.selectedSession?.displayTitle ?? "New Chat")
         .navigationSubtitle(subtitle)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) { YoloToggle() }
             ToolbarItem(placement: .primaryAction) {
                 Button { model.voice.start() } label: { Label("Voice", systemImage: "waveform") }
                     .help("Voice mode (⌥⌘V)")
@@ -328,6 +329,11 @@ struct EntryView: View {
                     .disclosureGroupStyle(QuietDisclosure())
                 }
                 if !entry.tools.isEmpty { ToolChips(tools: entry.tools) }
+                ForEach(Array(entry.autoApproved.enumerated()), id: \.offset) { _, c in
+                    Label { Text("Auto-approved (YOLO): ") + Text(c).font(.system(.caption, design: .monospaced)) }
+                        icon: { Image(systemName: "bolt.fill") }
+                        .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                }
                 if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
                 if !entry.text.isEmpty { MarkdownView(text: entry.streaming ? Self.holdBackPartialMarker(entry.text) : Self.trimDanglingMarker(entry.text)) }
                 else if entry.streaming && entry.thinking.isEmpty && entry.tools.isEmpty { TypingIndicator() }
@@ -434,7 +440,8 @@ struct ApprovalCard: View {
                 if request.choices.contains("deny") { Button("Deny", role: .destructive) { choose("deny") } }
                 Spacer()
                 if request.choices.contains("always") { Button("Always Allow") { choose("always") } }
-                if request.choices.contains("session") { Button("Allow for Chat") { choose("session") } }
+                // AIDEV-NOTE: Hermes scopes "session" approvals by run_id on API chats, so it lasts this reply only.
+                if request.choices.contains("session") { Button("Allow for This Reply") { choose("session") } }
                 // AIDEV-NOTE: security; no keyboard shortcut on approval buttons. Return sends in the composer and must
                 // never approve an agent command (security review 2026-11-21).
                 if request.choices.contains("once") { Button("Allow Once") { choose("once") }.buttonStyle(.borderedProminent) }
@@ -544,6 +551,29 @@ struct FlowLayout: Layout {
             if x + sz.width > bounds.maxX, x > bounds.minX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
             s.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(sz))
             x += sz.width + spacing; rowH = max(rowH, sz.height)
+        }
+    }
+}
+
+/// Per-chat YOLO: when on, Alaria approves every command Hermes asks to run in this chat (see ChatStore).
+struct YoloToggle: View {
+    @Environment(AppModel.self) private var model
+    @ViewState private var confirming = false
+    var body: some View {
+        let chats = model.chats
+        let on = chats.isYolo(chats.selection)
+        Button {
+            if on { chats.setYolo(false, for: chats.selection) } else { confirming = true }
+        } label: {
+            Label(on ? "YOLO On" : "YOLO", systemImage: on ? "bolt.fill" : "bolt.slash")
+                .foregroundStyle(on ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+        }
+        .help(on ? "YOLO is on: commands in this chat run without asking. Click to turn off."
+                 : "YOLO: approve every command in this chat automatically")
+        .confirmationDialog("Turn on YOLO for this chat?", isPresented: $confirming) {
+            Button("Turn On YOLO", role: .destructive) { chats.setYolo(true, for: chats.selection) }
+        } message: {
+            Text("Alaria will approve every command Hermes asks to run in this chat, without asking you. Each one is listed in the chat. Other chats still ask.")
         }
     }
 }
