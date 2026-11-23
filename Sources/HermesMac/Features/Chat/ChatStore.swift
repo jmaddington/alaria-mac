@@ -61,6 +61,7 @@ final class ChatStore {
     }
 
     func select(_ id: String?) {
+        if id != nil { yoloNewChat = false } // a pending YOLO belongs to the blank chat only (security review)
         guard id != loadedFor else { return }
         if isStreaming, id != selection {
             // Hermes interrupts the agent when the stream's client goes away, so leaving a chat stops its reply.
@@ -161,6 +162,8 @@ final class ChatStore {
 
         streamGen += 1
         let gen = streamGen
+        let armYolo = selection == nil && yoloNewChat // captured now: only the blank chat that armed it
+        yoloNewChat = false
         streamTask = Task {
             var failure: Error?
             var sessionID: String? // for the notification hook below
@@ -169,7 +172,7 @@ final class ChatStore {
                 if let s = selection { sid = s } else {
                     let s = try await client.createSession(title: nil)
                     sid = s.id
-                    if yoloNewChat { setYolo(true, for: sid); yoloNewChat = false }
+                    if armYolo { setYolo(true, for: sid) }
                     selection = sid
                     loadedFor = sid
                     sessions.insert(s, at: 0)
