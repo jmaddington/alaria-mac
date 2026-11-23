@@ -60,6 +60,10 @@ func runImageChecks() {
         let s = ChatContent.parseStored("look\n\n[Image attached at: /h/cache/documents/native-inputs/ab/api_1.png]\n[screenshot]")
         expect(s.text == "look" && s.imageCount == 1 && s.imagePaths == ["/h/cache/documents/native-inputs/ab/api_1.png"], "\(s)")
     }
+    check("images: voice doesn't read image markup or MEDIA paths") {
+        expect(SentenceSplitter.clean("Here: ![a chart](data:image/png;base64,AAAA)") == "Here:")
+        expect(SentenceSplitter.clean("MEDIA:/h/cache/images/a.png") == nil)
+    }
 
     guard let client = devClient() else { return }
     var done = false
