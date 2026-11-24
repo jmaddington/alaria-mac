@@ -886,8 +886,20 @@ final class ChatStore {
                 let ids = Set(self.live.filter { $0.session == s.id }.compactMap(\.runId) + persisted.map(\.runId)).subtracting(stopped)
                 if ids.isEmpty { break }
                 // Queued turns first, so none starts once the active one is stopped.
-                let queued = Set(self.live.filter { $0.queued }.compactMap(\.runId) + persisted.filter(\.queued).map(\.runId))
-                for id in ids.sorted(by: { queued.contains($0) && !queued.contains($1) }) {
+                // Live state wins over the persisted flag (it isn't rewritten when a turn leaves the queue); then
+                // newest first, so the active (oldest) run is stopped last.
+                let mine = self.live.filter { $0.session == s.id }
+                let liveIDs = Set(mine.compactMap(\.runId))
+                let queued = Set(mine.filter(\.queued).compactMap(\.runId)
+                                 + persisted.filter { $0.queued && !liveIDs.contains($0.runId) }.map(\.runId))
+                var created: [String: Double] = [:]
+                for p in persisted { created[p.runId] = p.createdAt }
+                for r in mine { if let id = r.runId, let c = r.createdAt { created[id] = c } }
+                let order = ids.sorted { a, b in
+                    let qa = queued.contains(a), qb = queued.contains(b)
+                    return qa != qb ? qa : (created[a] ?? .infinity) > (created[b] ?? .infinity)
+                }
+                for id in order {
                     do { try await client.stopRun(id) } catch let e as HermesError where e.status == 404 || e.status == 409 {
                     } catch {
                         runLog.error("delete: couldn't stop run \(id, privacy: .public), chat kept: \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]")
