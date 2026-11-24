@@ -861,16 +861,16 @@ final class ChatStore {
             self.live.removeAll { $0.session == s.id }
             Self.deletedSessions.insert(s.id)
             Self.forgetLocal(session: s.id) { keys[$0] ?? $0 }
+            self.models.forget(session: s.id, key: keys["chats.modelChoices"] ?? "")
+            self.yoloVersion += 1
+            if self.selection == s.id { self.newChat() }
+            self.sessions.removeAll { $0.id == s.id }
             for r in doomed {
                 guard let id = r.runId else { self.liveTasks[r.id] = nil; continue } // drive stops it (see above)
                 self.liveTasks[r.id]?.cancel(); self.liveTasks[r.id] = nil
                 do { try await client.stopRun(id) }
                 catch { runLog.error("delete: couldn't stop run \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]") }
             }
-            self.models.forget(session: s.id, key: keys["chats.modelChoices"] ?? "")
-            self.yoloVersion += 1
-            if self.selection == s.id { self.newChat() }
-            self.sessions.removeAll { $0.id == s.id }
         }
     }
 
