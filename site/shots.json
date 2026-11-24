@@ -1,0 +1,9 @@
+{
+  "mac": [
+    {"src": "img/mac/02-running.png", "alt": "The chat list showing a reply in progress with the status Running terminal.", "caption": "The chat list says what a reply is doing while it runs."},
+    {"src": "img/mac/03-approval.png", "alt": "An approval card in a chat asking to run an rm -rf command, with Deny, Always Allow, Allow for This Reply and Allow Once buttons.", "caption": "Hermes asks before running risky commands. You answer in the chat."},
+    {"src": "img/mac/04-commands.png", "alt": "The slash command menu open over the composer, listing model, reasoning, yolo, retry, stop and more.", "caption": "Type / for commands like switching the model or turning on YOLO."},
+    {"src": "img/mac/05-skills.png", "alt": "The Skills screen listing installed skills grouped by category.", "caption": "Skills, scheduled jobs, tools and memory each get a proper screen."}
+  ],
+  "ios": []
+}

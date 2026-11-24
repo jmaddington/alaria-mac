@@ -1,0 +1,17 @@
+Native SwiftUI app for iPhone and iPad (iOS 26), with a sidebar on iPad.
+Chat with your Hermes agent, with streaming replies, Markdown, code blocks and tables.
+Replies keep running on the server when you leave a chat or close the app, and pick up where they are when you come back.
+Type while Hermes is replying: queue the message, steer the current reply, or stop and send.
+Approve or deny commands Hermes wants to run, once or for the session. YOLO mode per chat if you'd rather not be asked.
+Send photos to Hermes and see pictures it sends back.
+Voice mode: talk to Hermes hands-free, with on-device or server speech.
+Slash commands in the composer.
+Several Hermes servers, and switching between profiles on each, each with its own key.
+Type @profile to send a message to another profile as a new chat there.
+Search across all your chats.
+Archive, rename and delete chats; filter the list by where a chat came from (app, terminal, Telegram, scheduled task).
+Scheduled tasks: create, edit, pause, run now, and watch a run update live.
+Browse and create skills.
+Model, tools, memory, usage, logs and the config file, from Settings.
+Links open in an in-app browser, in Safari, or in-app only for pages your Hermes server serves.
+Talks only to your own Hermes server. No accounts, no analytics.

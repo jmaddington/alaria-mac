@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alaria</title>
+<meta name="description" content="A native Mac, iPhone and iPad client for Hermes Agent.">
+<meta property="og:title" content="Alaria">
+<meta property="og:description" content="A native Mac, iPhone and iPad client for Hermes Agent.">
+<meta property="og:image" content="https://jmaddington.github.io/hermes-mac/img/mac/01-chat.png">
+<link rel="icon" href="img/favicon.png">
+<style>
+/* AIDEV-NOTE: system font on purpose: the app is native, so the page renders in SF on Apple devices. */
+:root {
+  --paper: #ececf0;
+  --surface: #f7f7fa;
+  --ink: #1b1c2b;
+  --ink-2: #565870;
+  --rule: #d6d6de;
+  --indigo: #5c63f5;
+  --teal: #2bb3c0;
+  --desk-a: #5a5fe8;
+  --desk-b: #3b2f9e;
+  --desk-c: #2bb3c0;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #18181f;
+    --surface: #202029;
+    --ink: #ececf2;
+    --ink-2: #a3a4b8;
+    --rule: #33343f;
+    --indigo: #7d85ff;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 17px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--indigo); text-underline-offset: 0.18em; }
+a:focus-visible, .button:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; border-radius: 6px; }
+img { max-width: 100%; height: auto; display: block; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+.measure { max-width: 34em; }
+
+/* Top */
+header.top { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 19px; color: var(--ink); text-decoration: none; }
+.brand img { width: 34px; height: 34px; }
+nav.top a { color: var(--ink-2); text-decoration: none; margin-left: 22px; font-size: 15px; }
+nav.top a:hover { color: var(--ink); }
+
+/* Hero */
+.hero { padding: 56px 0 40px; }
+.hero h1 {
+  font: 700 clamp(40px, 7.2vw, 84px)/1.0 -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+  letter-spacing: -0.035em;
+  margin: 0 0 22px;
+  max-width: 12em;
+}
+.hero p { font-size: 20px; color: var(--ink-2); margin: 0 0 30px; }
+.actions { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.button {
+  display: inline-block; padding: 11px 20px; border-radius: 10px;
+  background: var(--indigo); color: #fff; font-weight: 600; text-decoration: none; font-size: 16px;
+}
+.button:hover { filter: brightness(1.08); }
+.quiet { color: var(--ink-2); font-size: 15px; }
+
+/* The desk: the one loud thing on the page. A slice of desktop in the app icon's colors. */
+.desk {
+  margin: 28px 0 0;
+  padding: clamp(18px, 5vw, 64px) clamp(14px, 5vw, 64px) 0;
+  border-radius: 22px 22px 0 0;
+  background:
+    radial-gradient(120% 90% at 100% 100%, var(--desk-c) 0%, transparent 55%),
+    linear-gradient(150deg, var(--desk-a) 0%, var(--desk-b) 100%);
+  overflow: hidden;
+}
+.desk img {
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 30px 80px rgba(10, 8, 60, .45), 0 0 0 .5px rgba(0,0,0,.25);
+}
+.desk + .caption { font-size: 14px; color: var(--ink-2); margin: 12px 0 0; }
+
+/* Sections */
+section { padding: 72px 0 0; }
+h2 { font-size: 30px; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 14px; }
+h3 { font-size: 17px; margin: 0 0 8px; }
+.lede { color: var(--ink-2); margin: 0 0 32px; }
+
+.why p { margin: 0 0 14px; }
+
+/* Features: grouped plain lists, two columns of groups. */
+.groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px 56px; }
+.group ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.group li { padding: 9px 0; border-bottom: 1px solid var(--rule); }
+.group li span { color: var(--ink-2); }
+
+/* Screens */
+.shots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.shots figure { margin: 0; }
+.shots img { border-radius: 10px; box-shadow: 0 12px 40px rgba(20, 20, 60, .18), 0 0 0 .5px rgba(0,0,0,.12); }
+.shots figcaption { font-size: 14px; color: var(--ink-2); margin-top: 10px; }
+.phones { display: flex; gap: 22px; overflow-x: auto; padding: 4px 4px 18px; scroll-snap-type: x mandatory; }
+.phones img { width: 250px; flex: none; border-radius: 34px; scroll-snap-align: start;
+  box-shadow: 0 12px 40px rgba(20, 20, 60, .2), 0 0 0 .5px rgba(0,0,0,.15); }
+.phones:empty::before { content: "iPhone and iPad screenshots are on their way."; color: var(--ink-2); }
+
+/* Doesn't do */
+.nope { background: var(--surface); border-radius: 16px; padding: 30px 32px; margin-top: 72px; }
+.nope h2 { font-size: 24px; }
+.nope ul { margin: 0; padding-left: 1.1em; }
+.nope li { margin: 6px 0; }
+
+/* Get it */
+.get { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 40px; }
+.get p { margin: 0 0 12px; }
+code { font: 14px/1.4 ui-monospace, "SF Mono", Menlo, monospace; background: var(--surface); padding: 2px 6px; border-radius: 5px; }
+
+footer { margin: 88px 0 0; padding: 26px 0 40px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--ink-2); }
+footer p { margin: 0 0 6px; }
+
+@media (max-width: 760px) {
+  body { font-size: 16px; }
+  .wrap { padding: 0 16px; }
+  nav.top a { margin-left: 14px; }
+  nav.top a.hide-sm { display: none; }
+  .hero { padding-top: 28px; }
+  .hero p { font-size: 18px; }
+  .groups, .shots, .get { grid-template-columns: 1fr; gap: 28px; }
+  .desk { border-radius: 14px 14px 0 0; }
+  .nope { padding: 22px 20px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./"><img src="img/icon.png" alt="">Alaria</a>
+    <nav class="top">
+      <a href="#features">Features</a>
+      <a class="hide-sm" href="#iphone">iPhone</a>
+      <a href="#get">Get it</a>
+      <a href="https://github.com/jmaddington/hermes-mac">Source</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>A Hermes client that doesn’t suck.</h1>
+    <p class="measure">Alaria is a Mac, iPhone and iPad app for <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a>. It looks and behaves like the other apps on your computer, because it is one.</p>
+    <div class="actions">
+      <a class="button" href="https://github.com/jmaddington/hermes-mac/releases/latest">Download for Mac</a>
+      <span class="quiet">macOS 26 or later. iPhone and iPad are in TestFlight.</span>
+    </div>
+    <figure class="desk" style="margin-left:0;margin-right:0">
+      <img src="img/mac/01-chat.png" width="2400" height="1548" alt="Alaria on a Mac: a chat list on the left, a reply with a terminal step and a table of timings on the right.">
+    </figure>
+  </div>
+
+  <section class="why">
+    <h2>Why it exists</h2>
+    <div class="measure">
+      <p>I wanted a Hermes client that didn’t suck and acted like a native app. Claude can make whatever I want, so I had Claude make it.</p>
+      <p>That’s the whole story. It’s written in Swift and SwiftUI, it talks to your own Hermes server over its regular API, and it doesn’t phone home anywhere else.</p>
+    </div>
+  </section>
+
+  <section id="features">
+    <h2>What it does</h2>
+    <p class="lede measure">Everything here works on the Mac today. Most of it works on iPhone and iPad too.</p>
+    <div class="groups">
+      <div class="group">
+        <h3>Chatting</h3>
+        <ul>
+          <li>Replies stream in with proper formatting, code and tables.</li>
+          <li>Send pictures by pasting or dragging them in. Pictures Hermes makes show up in the reply.</li>
+          <li>Pick the model per chat, or use the server’s default.</li>
+          <li>Type <code>/</code> for the usual commands: model, YOLO, and friends.</li>
+          <li>Keep typing while it works. <span>Queue the next message, steer the current reply, or stop it and send.</span></li>
+          <li>Search every chat, and pin, rename or archive them.</li>
+        </ul>
+      </div>
+      <div class="group">
+        <h3>Keeping up with the agent</h3>
+        <ul>
+          <li>Replies keep running on the server when you switch chats or quit. <span>Come back and it picks up where it is.</span></li>
+          <li>The chat list shows which chats are still working and what they’re doing.</li>
+          <li>Approve or deny commands right in the chat. <span>Or turn on YOLO for one chat and let it rip.</span></li>
+          <li>Notifications for finished replies, approvals and scheduled runs.</li>
+          <li>Filter chats by where they came from: this app, the terminal, scheduled jobs, messaging bridges.</li>
+        </ul>
+      </div>
+      <div class="group">
+        <h3>The rest of Hermes</h3>
+        <ul>
+          <li>Browse skills, scheduled jobs, tools and memory.</li>
+          <li>Usage and logs, without opening the web dashboard.</li>
+          <li>Profiles, with <code>@work</code> to start a chat in another one.</li>
+          <li>Several servers, one keystroke apart.</li>
+        </ul>
+      </div>
+      <div class="group">
+        <h3>Mac things</h3>
+        <ul>
+          <li>Hands-free voice mode you can interrupt mid-sentence. <span>Speech recognition runs on the Mac.</span></li>
+          <li>A built-in browser panel Hermes can look at and drive.</li>
+          <li>Keyboard shortcuts for the things you do a lot.</li>
+          <li>Signed, notarized, and it updates itself.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="screens">
+    <h2>On the Mac</h2>
+    <p class="lede measure">Screenshots from a test server with made-up chats.</p>
+    <div class="shots" id="mac-shots"></div>
+  </section>
+
+  <section id="iphone">
+    <h2>On iPhone and iPad</h2>
+    <p class="lede measure">Same Hermes, same chats, sized for your hand. It’s in TestFlight while the rough edges come off.</p>
+    <div class="phones" id="ios-shots"></div>
+  </section>
+
+  <div class="nope">
+    <h2>What it doesn’t do</h2>
+    <ul class="measure">
+      <li>Run Hermes for you. You need your own <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a> server.</li>
+      <li>Collect anything. There’s no account, no analytics and no server of ours in the middle.</li>
+      <li>Speak for Nous Research. It’s an independent app; Hermes Agent is theirs.</li>
+      <li>Show up in the App Store. Mac builds come from GitHub. iPhone and iPad are TestFlight for now.</li>
+    </ul>
+  </div>
+
+  <section id="get">
+    <h2>Get it</h2>
+    <div class="get">
+      <div>
+        <h3>Mac</h3>
+        <p>Download the latest DMG from <a href="https://github.com/jmaddington/hermes-mac/releases/latest">GitHub Releases</a> and drag Alaria to Applications. Updates arrive on their own after that.</p>
+        <p class="quiet">Needs macOS 26 and a Hermes server you can reach: on the same Mac, your network, or a tailnet.</p>
+      </div>
+      <div>
+        <h3>iPhone and iPad</h3>
+        <p>In TestFlight, invite only for now.</p>
+        <h3 style="margin-top:22px">Build it yourself</h3>
+        <p>The Mac app builds with Command Line Tools alone: <code>./scripts/build.sh</code></p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Alaria is not affiliated with Nous Research. Hermes Agent is their project.</p>
+    <p><a href="https://github.com/jmaddington/hermes-mac">Source on GitHub</a></p>
+  </footer>
+</div>
+<script>
+// Screens are listed in shots.json so adding one is a file drop + one line, no HTML edits.
+fetch("shots.json").then(r => r.ok ? r.json() : null).then(s => {
+  if (!s) return;
+  const mac = document.getElementById("mac-shots");
+  for (const m of s.mac || []) {
+    const f = document.createElement("figure");
+    const i = new Image(); i.src = m.src; i.alt = m.alt; i.loading = "lazy";
+    const c = document.createElement("figcaption"); c.textContent = m.caption;
+    f.append(i, c); mac.append(f);
+  }
+  const ios = document.getElementById("ios-shots");
+  for (const m of s.ios || []) {
+    const i = new Image(); i.src = m.src; i.alt = m.alt; i.loading = "lazy"; ios.append(i);
+  }
+}).catch(() => {});
+</script>
+</body>
+</html>
