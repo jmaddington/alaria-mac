@@ -431,12 +431,13 @@ struct EntryView: View {
                         icon: { Image(systemName: "clock.badge.xmark") }
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
+                if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
+                if !entry.text.isEmpty { MarkdownView(text: entry.streaming ? Self.holdBackPartialMarker(entry.text) : Self.trimDanglingMarker(entry.text)) }
+                // Under the text so far, next to the progress line: on a long reply, above the text is off screen.
                 ForEach(Array(entry.steers.enumerated()), id: \.offset) { _, t in
                     Label { Text("Steered: ") + Text(t).italic() } icon: { Image(systemName: "arrow.turn.down.right") }
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
-                if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
-                if !entry.text.isEmpty { MarkdownView(text: entry.streaming ? Self.holdBackPartialMarker(entry.text) : Self.trimDanglingMarker(entry.text)) }
                 // While the reply runs, always say so at its foot: dots plus what it's doing right now.
                 if entry.streaming && !entry.queued, let status = entry.progressText {
                     HStack(spacing: 8) {

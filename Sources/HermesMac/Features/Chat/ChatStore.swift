@@ -153,11 +153,15 @@ final class ChatStore {
     func select(_ id: String?) {
         if id != nil { yoloNewChat = false; models.pending = nil } // pending YOLO/model belong to the blank chat only
         guard id != loadedFor else { return }
+        // Re-loading the chat already on screen (after a steered/approval run): keep its rows until history lands.
+        // AIDEV-NOTE: emptying entries here blanked the transcript for good (LazyVStack at a stale offset) until
+        // the chat was re-selected. Only the swap below may replace them.
+        let inPlace = id != nil && id == selection
         // Leaving a chat with a running reply just stops showing it: the run goes on server-side (hermes-mac-wny).
         selection = id
         loadedFor = id
         messagesError = nil
-        entries = liveEntries(for: id)
+        if !inPlace { entries = liveEntries(for: id) }
         guard let id, let client else { return }
         loadingMessages = true
         // Captured before the await: a run that finishes during it still has its turn on screen (dev-40 review #5).
@@ -177,7 +181,9 @@ final class ChatStore {
                 // Keep anything sent while history was loading (hermes-mac-7j1): history goes in front of it.
                 let history = mergeEvents(Self.entries(from: cut), session: id)
                 let known = Set(history.map(\.id))
-                entries = history + entries.filter { !known.contains($0.id) }
+                // Only live turns survive the swap (a refresh still holds the old history rows, under old ids).
+                let liveIDs = Set(runs.flatMap { [$0.user.id, $0.reply.id] })
+                entries = history + entries.filter { !known.contains($0.id) && liveIDs.contains($0.id) }
             } catch {
                 guard selection == id, !error.isCancellation else { return }
                 loadedFor = nil // so selecting it again retries
@@ -286,6 +292,9 @@ final class ChatStore {
                 do {
                     try await client.steer(run, text: text)
                     runLog.info("steered \(run, privacy: .public) [ALR-RUN-STEER]")
+                    // Hermes stores a steer as its own user row + answer, but the stream folds that answer into this
+                    // reply (replacing its text). Re-read history when the run ends so the turns show as stored.
+                    reloadIfOpen(key)
                 } catch {
                     // Steer races the run's end (409 run_not_accepting_steer): send it as the next turn instead.
                     runLog.info("steer refused, queueing: \(error.localizedDescription, privacy: .public) [ALR-RUN-STEER-Q]")
