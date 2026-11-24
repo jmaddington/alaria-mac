@@ -323,6 +323,7 @@ final class ChatStore {
                        onEvent: ((ChatEvent) -> Void)? = nil, onFinish: ((Error?) -> Void)? = nil) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty, let client else { return false }
+        if let sid = selection, deleting.contains(sid) { app?.flash("This chat is being deleted."); return false }
         syncScope() // a scope change not yet synced would detach this run right after it starts
         let parts = Attachment.parts(text: text, attachments)
         if let problem = ChatContent.problem(with: parts) { app?.flash(problem); return false }
@@ -864,18 +865,33 @@ final class ChatStore {
         guard let client else { return }
         // Captured before the await: a server/profile switch during the request must not aim the cleanup elsewhere.
         let keys = Dictionary(uniqueKeysWithValues: ChatLocalData.bases.map { ($0, localKey($0)) })
+        // No new turn may start in it while its replies are stopped and it's deleted (start() checks this).
+        deleting.insert(s.id)
         app?.run("Delete") {
+            defer { self.deleting.remove(s.id) }
             // AIDEV-NOTE: security. Stop its replies FIRST and keep the chat if a stop is refused: deleting first
             // would leave an agent (maybe mid-YOLO) running with no chat, Stop button or approval card (dev-40).
-            // 404/409 = already gone/finished. A run still posting (no id) is stopped by drive once it gets one
-            // and finds itself gone from `live`.
-            for r in self.live where r.session == s.id {
-                guard let id = r.runId else { continue }
-                do { try await client.stopRun(id) } catch let e as HermesError where e.status == 404 || e.status == 409 {
-                } catch {
-                    runLog.error("delete: couldn't stop run \(id, privacy: .public), chat kept: \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]")
-                    throw error // run() reports "Delete failed"; the chat stays, with its Stop button
+            // 404/409 = already gone/finished. Covers persisted runs not (yet) re-attached too, and re-checks after
+            // the awaits; a reply still starting (no run id yet) blocks the delete rather than being left to drive.
+            var stopped = Set<String>()
+            for _ in 0..<3 {
+                if self.live.contains(where: { $0.session == s.id && $0.runId == nil }) {
+                    throw DeleteBlocked("A reply in this chat is still starting. Try again in a moment.")
                 }
+                let persisted = RunRegistry(data: UserDefaults.standard.data(forKey: keys["chats.activeRuns"] ?? "")).runs(in: s.id)
+                let ids = Set(self.live.filter { $0.session == s.id }.compactMap(\.runId) + persisted.map(\.runId)).subtracting(stopped)
+                if ids.isEmpty { break }
+                for id in ids {
+                    do { try await client.stopRun(id) } catch let e as HermesError where e.status == 404 || e.status == 409 {
+                    } catch {
+                        runLog.error("delete: couldn't stop run \(id, privacy: .public), chat kept: \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]")
+                        throw error // run() reports "Delete failed"; the chat stays, with its Stop button
+                    }
+                    stopped.insert(id)
+                }
+            }
+            if self.live.contains(where: { $0.session == s.id && ($0.runId.map { !stopped.contains($0) } ?? true) }) {
+                throw DeleteBlocked("This chat kept starting replies. Stop them, then delete it.")
             }
             try await client.deleteSession(s.id)
             // Then out of `live` and local state in one synchronous step: nothing may re-attach or re-arm YOLO for
@@ -892,6 +908,15 @@ final class ChatStore {
             if self.selection == s.id { self.newChat() }
             self.sessions.removeAll { $0.id == s.id }
         }
+    }
+
+    /// Chats being deleted right now (their replies are being stopped first).
+    @ObservationIgnored private var deleting: Set<String> = []
+
+    struct DeleteBlocked: LocalizedError {
+        let message: String
+        init(_ m: String) { message = m }
+        var errorDescription: String? { message }
     }
 
     func fork(_ s: HermesSession) {
