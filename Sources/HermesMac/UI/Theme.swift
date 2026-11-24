@@ -10,11 +10,12 @@ enum Theme {
     /// Hermes' accent: a deep, calm indigo. Used sparingly - selection, the user's bubble, the orb.
     /// The one accent: indigo, a touch brighter in dark mode. Applied app-wide with .tint so selection, switches and
     /// prominent buttons match the bubbles and send button (hermes-mac-gct).
-    static let accent = Color(nsColor: NSColor(name: "HermesAccent") { appearance in
+    static let accentNS = NSColor(name: "HermesAccent") { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             ? NSColor(srgbRed: 0.49, green: 0.52, blue: 1.0, alpha: 1)
             : NSColor(srgbRed: 0.36, green: 0.39, blue: 0.96, alpha: 1)
-    })
+    }
+    static let accent = Color(nsColor: accentNS)
     static let accentSoft = accent.opacity(0.12)
     static let readingWidth: CGFloat = 720
     static let corner: CGFloat = 14

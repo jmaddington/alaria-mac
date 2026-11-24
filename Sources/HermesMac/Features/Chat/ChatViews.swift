@@ -358,6 +358,9 @@ struct EntryView: View {
             && (tail.allSatisfy(\.isNumber) || (tail.dropLast().allSatisfy(\.isNumber) && ".)".contains(tail.last!)) || tail == "-" || tail == "*")
         return partial ? String(t[..<nl]) : t
     }
+    static func hasMarkdown(_ t: String) -> Bool {
+        MarkdownSpans.spans(in: t).contains { $0.kind != .marker }
+    }
     /// After a stop, drop a dangling marker left at the end ("6").
     static func trimDanglingMarker(_ t: String) -> String { holdBackPartialMarker(t) }
     @Environment(AppModel.self) private var model
@@ -372,7 +375,11 @@ struct EntryView: View {
                 VStack(alignment: .trailing, spacing: 8) {
                     if !entry.attachments.isEmpty { MessageAttachmentsView(attachments: entry.attachments) }
                     if !entry.text.isEmpty {
-                        Text(MentionStyle.attributed(entry.text, model.profiles))
+                        // Markdown typed in the composer (quotes, code, emphasis) renders in the bubble too.
+                        Group {
+                            if Self.hasMarkdown(entry.text) { MarkdownView(text: entry.text) }
+                            else { Text(MentionStyle.attributed(entry.text, model.profiles)) }
+                        }
                             .textSelection(.enabled)
                             .lineSpacing(3)
                             .padding(.horizontal, 15).padding(.vertical, 10)
@@ -578,7 +585,9 @@ struct TypingIndicator: View {
 
 struct Composer: View {
     @Environment(AppModel.self) private var model
-    @FocusState private var focused: Bool
+    @ViewState private var focused = false
+    @ViewState private var focusRequest = 0
+    @ViewState private var inputHeight: CGFloat = 30
     // Observed so the shortcuts and hints redraw when Settings > Chat changes; reads go through SendKey.current.
     @AppStorage(SendKey.defaultsKey) private var sendKeyRaw = SendKey.return.rawValue
 
@@ -592,22 +601,15 @@ struct Composer: View {
         if chats.isStreaming && hasInput { BusyHint().padding(.leading, 6).padding(.top, 2) }
         HStack(alignment: .bottom, spacing: 10) {
             AttachButton().padding(.bottom, 5)
-            TextField("Message Hermes", text: $chats.draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.body)
-                .lineLimit(1...10)
-                .focused($focused)
-                .onSubmit(send) // Return sends; ⌥Return inserts a newline (native vertical TextField behavior)
-                // ⇧Return also inserts a newline (what Slack/ChatGPT/Claude users expect): same action ⌥Return
-                // triggers in the field editor, so it lands at the cursor, not just at the end.
-                // With "Send with ⌘Return" (Settings > Chat) a plain Return is a newline too; ⌘Return sends.
-                .onKeyPress(.return, phases: .down) { press in
-                    let newline = press.modifiers == .shift || (press.modifiers.isEmpty && SendKey.current == .commandReturn)
-                    guard newline else { return .ignored }
-                    NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
-                    return .handled
+            // Live-Markdown message box (ComposerTextView.swift): Return / Shift+Return / Send-with setting live there.
+            ComposerTextView(text: $chats.draft, focused: $focused, height: $inputHeight,
+                             focusRequest: focusRequest, onSubmit: send)
+                .frame(height: inputHeight)
+                .overlay(alignment: .topLeading) {
+                    if chats.draft.isEmpty {
+                        Text("Message Hermes").foregroundStyle(.tertiary).padding(.top, 6).allowsHitTesting(false)
+                    }
                 }
-                .padding(.vertical, 6)
             if chats.isStreaming {
                 if hasInput {
                     // Busy input: Return does the Settings default; the menu (and its shortcuts) offers the others.
@@ -652,8 +654,8 @@ struct Composer: View {
         .animation(.smooth(duration: 0.2), value: tray.isEmpty)
         .profileMentions(focused: focused) // @profile autocomplete + routing hint (Features/Profiles)
         .slashCommands(focused: focused) // "/" command menu (SlashCommandsUI.swift)
-        .onAppear { focused = true }
-        .onChange(of: chats.selection) { focused = true }
+        .onAppear { focusRequest += 1 }
+        .onChange(of: chats.selection) { focusRequest += 1 }
         .background { if chats.isStreaming { busyShortcuts } }
     }
 
