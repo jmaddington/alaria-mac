@@ -11,6 +11,14 @@ enum Keychain {
     // AIDEV-NOTE: follows the bundle id so a side-by-side copy (e.g. net.jmaddington.hermes.shots for website
     // screenshots) never reads or overwrites the real app's keys. The shipping app's id IS this string.
     static let service = Bundle.main.bundleIdentifier ?? "net.jmaddington.hermes"
+    /// Account names stored under this app's service (attributes only: reads no secret, so no Keychain prompt).
+    static func accounts() -> [String] {
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+                                kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
+        var out: AnyObject?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]] else { return [] }
+        return items.compactMap { $0[kSecAttrAccount as String] as? String }
+    }
     static func get(_ account: String) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecReturnData as String: true]
@@ -98,6 +106,12 @@ struct ConnectionSettings: Equatable, Identifiable {
         writeList(list)
         Keychain.set(account("apiKey", id), nil)
         Keychain.set(account("dashboardToken", id), nil)
+        // Its profiles' keys too ("apiKey.profile.<name>" + scope; see ProfileStore.keyAccount).
+        let scope = ChatLocalData.scope(forServer: id)
+        for a in Keychain.accounts() where a.hasPrefix("apiKey.profile.") {
+            let suffix = a.range(of: ".srv.").map { String(a[$0.lowerBound...]) } ?? ""
+            if suffix == scope { Keychain.set(a, nil) }
+        }
         if currentID == id { currentID = list[0].id }
     }
 
@@ -248,9 +262,12 @@ final class AppModel {
         let wasCurrent = id == settings.id
         guard servers.count > 1 else { return } // remove() keeps the last server; so must its data
         ConnectionSettings.remove(id)
-        ChatLocalData.purge(scope: ChatLocalData.scope(forServer: id))
         servers = ConnectionSettings.all()
-        if wasCurrent, let first = servers.first { settings = first; resetServerState(); profiles.serverChanged(); connect() }
+        if wasCurrent, let first = servers.first {
+            settings = first; resetServerState(); profiles.serverChanged(); connect()
+            chats.syncScope() // detach the removed server's runs now, so none persists after the purge below
+        }
+        ChatLocalData.purge(scope: ChatLocalData.scope(forServer: id))
     }
 
     private var connectTask: Task<Void, Never>?

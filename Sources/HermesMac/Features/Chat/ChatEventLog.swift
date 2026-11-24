@@ -1,4 +1,5 @@
 import Foundation
+import HermesKit
 
 /// A setting change in a chat (YOLO, model, rename), shown in the transcript as a one-line marker so there's a
 /// record of when it happened (user: "it should be logged physically like a chat message").
@@ -65,12 +66,33 @@ extension ChatStore {
         pendingEvents = []
     }
 
-    /// A deleted chat takes its events (a renamed title, among others) and its model choice with it.
-    func forgetEvents(session sid: String) {
+    /// Saves events with the chat without showing them now (they come back through mergeEvents on the next load).
+    func saveEvents(_ events: [ChatLogEvent], session sid: String) {
+        guard !events.isEmpty else { return }
         var store = ChatEventStore(data: UserDefaults.standard.data(forKey: eventsKey))
-        guard store.bySession[sid] != nil else { return }
-        store.remove(sid)
+        for e in events { store.add(e, to: sid) }
         UserDefaults.standard.set(store.data, forKey: eventsKey)
+    }
+
+    /// The current server + profile's key for one of the per-chat stores (ChatLocalData.bases).
+    func localKey(_ base: String) -> String { base + ConnectionSettings.scope + (client?.profile.map { ".\($0)" } ?? "") }
+
+    /// A deleted chat takes its local data with it: events (a renamed title, among others), model choice, YOLO,
+    /// archived mark, persisted runs. `key` is captured before the delete request, so a switch meanwhile can't
+    /// aim this at another server or profile.
+    static func forgetLocal(session sid: String, key: (String) -> String) {
+        let d = UserDefaults.standard
+        var store = ChatEventStore(data: d.data(forKey: key("chats.events")))
+        if store.bySession[sid] != nil { store.remove(sid); d.set(store.data, forKey: key("chats.events")) }
+        if let data = d.data(forKey: key("chats.modelChoices")),
+           var m = try? JSONDecoder().decode([String: ModelChoice].self, from: data), m.removeValue(forKey: sid) != nil,
+           let out = try? JSONEncoder().encode(m) { d.set(out, forKey: key("chats.modelChoices")) }
+        for k in ["chats.yolo", "chats.archivedIDs"] {
+            if let ids = d.stringArray(forKey: key(k)), ids.contains(sid) { d.set(ids.filter { $0 != sid }, forKey: key(k)) }
+        }
+        var reg = RunRegistry(data: d.data(forKey: key("chats.activeRuns")))
+        let stale = reg.runs(in: sid)
+        if !stale.isEmpty { for r in stale { reg.remove(r.runId) }; d.set(reg.data, forKey: key("chats.activeRuns")) }
     }
 
     func mergeEvents(_ history: [ChatEntry], session sid: String) -> [ChatEntry] {
@@ -82,7 +104,8 @@ extension ChatStore {
 // AIDEV-NOTE: privacy. Removing a server or deleting a profile must purge these (dev-40 found renamed titles
 // surviving deletes; iOS talaria-ios c344ab1). Add any new per-scope chat key to `bases`.
 enum ChatLocalData {
-    static let bases = ["chats.events", "chats.modelChoices", "chats.activeRuns"]
+    static let bases = ["chats.events", "chats.modelChoices", "chats.activeRuns", "chats.yolo", "chats.archivedIDs",
+                        "profile.selected"]
 
     /// Server scope for a server id ("" for the default server, as ConnectionSettings.scope).
     static func scope(forServer id: String) -> String { id == "default" ? "" : ".srv.\(id)" }

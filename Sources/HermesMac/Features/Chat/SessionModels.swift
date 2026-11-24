@@ -87,10 +87,8 @@ final class SessionModels {
         if chosen.count > 300 { for k in chosen.keys.prefix(chosen.count - 300) where k != session { chosen[k] = nil } }
         if let d = try? JSONEncoder().encode(chosen) { UserDefaults.standard.set(d, forKey: storeKey) }
     }
-    func forget(session: String) {
-        guard chosen.removeValue(forKey: session) != nil else { return }
-        if let d = try? JSONEncoder().encode(chosen) { UserDefaults.standard.set(d, forKey: storeKey) }
-    }
+    /// Drops a deleted chat's choice from memory when `key` is the store loaded now (ChatStore.forgetLocal edits disk).
+    func forget(session: String, key: String) { if key == storeKey { chosen[session] = nil } }
     fileprivate func setSwitching(_ id: String, _ on: Bool) { if on { switching.insert(id) } else { switching.remove(id) } }
 
     private static func restore(_ key: String) -> [String: ModelChoice] {
