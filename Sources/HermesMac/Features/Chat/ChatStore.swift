@@ -570,17 +570,13 @@ final class ChatStore {
         mutate(key) { $0.reply.streaming = false; $0.reply.queued = false; $0.user.queued = false }
         if r.withdrawn { entries.removeAll { $0.id == r.user.id || $0.id == r.reply.id } }
         if let sid = r.session, !r.withdrawn { app?.notifier.replyEnded(session: sid, entry: key, cancelled: false) }
-        // A history reload replaces this reply with the stored one, which has no record of what YOLO ran or which
-        // approval expired: keep those as chat events (they're the audit trail), dated when the approval came up.
-        if let cur = run(key), cur.reloadHistory, let sid = cur.session, !cur.withdrawn {
-            let at = cur.reply.approvalAt ?? cur.reply.date ?? .now
-            var keep = cur.reply.autoApproved.map {
-                ChatLogEvent(id: UUID().uuidString, date: at, text: "Auto-approved (YOLO): \($0)", symbol: "bolt.fill")
-            }
-            if let c = cur.reply.expiredApproval {
-                keep.append(ChatLogEvent(id: UUID().uuidString, date: at, text: "Approval expired, not run: \(c)", symbol: "clock.badge.xmark"))
-            }
-            saveEvents(keep, session: sid)
+        // Stored history has no record of an approval left unanswered: keep it as a chat event (audit trail), dated
+        // when it came up. Auto-approvals are saved as they happen (autoApprove). An answer that was in flight is
+        // reported as unknown, not as "not run".
+        if let cur = run(key), let c = cur.reply.expiredApproval, let sid = cur.session, !cur.withdrawn {
+            let text = cur.reply.answeringApproval ? "Approval outcome unknown: \(c)" : "Approval expired, not run: \(c)"
+            saveEvents([ChatLogEvent(id: UUID().uuidString, date: cur.reply.approvalAt ?? cur.reply.date ?? .now,
+                                     text: text, symbol: "clock.badge.xmark")], session: sid, registryKey: cur.registryKey)
         }
         live.removeAll { $0.id == key }
         liveTasks[key] = nil
@@ -761,6 +757,12 @@ final class ChatStore {
             do {
                 try await client.answerApproval(a, choice: "once")
                 update(entry) { $0.autoApproved.append(what); if $0.approvalAt == nil { $0.approvalAt = .now } }
+                // Saved now (not at the run's end): the stored reply carries no record of it, and this must outlive
+                // a reload, a relaunch or a run that's let go. Shown inline meanwhile; merged from here on next load.
+                if let r = live.first(where: { $0.id == entry }), let sid = r.session {
+                    saveEvents([ChatLogEvent(id: UUID().uuidString, date: .now, text: "Auto-approved (YOLO): \(what)",
+                                             symbol: "bolt.fill")], session: sid, registryKey: r.registryKey)
+                }
             } catch {
                 // A replayed request (re-attach after relaunch) may already be settled: nothing to ask then.
                 if let p = a.requestId, live.first(where: { $0.id == entry })?.settled.contains(p) == true { return }
@@ -844,9 +846,14 @@ final class ChatStore {
         app?.run("Delete") {
             try await client.deleteSession(s.id)
             // Its replies still running here: stop them and let go (their prompts must not linger in the registry).
+            // As stop(): with a run id, stop it and cancel the task; still posting (no id), just let go, and drive
+            // stops the server run itself once POST /v1/runs returns and finds the run gone.
             for r in self.live where r.session == s.id {
-                if let id = r.runId { try? await client.stopRun(id) }
-                self.liveTasks[r.id]?.cancel(); self.liveTasks[r.id] = nil
+                if let id = r.runId {
+                    do { try await client.stopRun(id) }
+                    catch { runLog.error("delete: couldn't stop run \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]") }
+                    self.liveTasks[r.id]?.cancel(); self.liveTasks[r.id] = nil
+                }
                 self.live.removeAll { $0.id == r.id }
             }
             Self.forgetLocal(session: s.id) { keys[$0] ?? $0 }

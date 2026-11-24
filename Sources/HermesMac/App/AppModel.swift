@@ -255,6 +255,7 @@ final class AppModel {
         resetServerState()
         profiles.serverChanged()
         connect()
+        chats.syncScope() // follow only the new server's runs, before anything can start one here
         flash("Switched to \(s.displayName)")
     }
 

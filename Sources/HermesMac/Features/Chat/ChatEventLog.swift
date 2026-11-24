@@ -67,11 +67,14 @@ extension ChatStore {
     }
 
     /// Saves events with the chat without showing them now (they come back through mergeEvents on the next load).
-    func saveEvents(_ events: [ChatLogEvent], session sid: String) {
-        guard !events.isEmpty else { return }
-        var store = ChatEventStore(data: UserDefaults.standard.data(forKey: eventsKey))
+    /// `registryKey` is the run's own (LiveRun.registryKey): its events land in that run's server + profile, even if
+    /// the app has switched since.
+    func saveEvents(_ events: [ChatLogEvent], session sid: String, registryKey: String) {
+        guard !events.isEmpty, registryKey.hasPrefix("chats.activeRuns") else { return }
+        let key = "chats.events" + registryKey.dropFirst("chats.activeRuns".count)
+        var store = ChatEventStore(data: UserDefaults.standard.data(forKey: key))
         for e in events { store.add(e, to: sid) }
-        UserDefaults.standard.set(store.data, forKey: eventsKey)
+        UserDefaults.standard.set(store.data, forKey: key)
     }
 
     /// The current server + profile's key for one of the per-chat stores (ChatLocalData.bases).
