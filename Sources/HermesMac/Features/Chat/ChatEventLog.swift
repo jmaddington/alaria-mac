@@ -16,7 +16,8 @@ struct ChatLogEvent: Codable, Equatable {
 
 /// Pure storage: events per session id, capped so UserDefaults stays small.
 struct ChatEventStore: Codable {
-    static let perChat = 50, chats = 300
+    // AIDEV-NOTE: YOLO auto-approvals are audit events too; 200 per chat before the oldest drop (hermes-mac-2se).
+    static let perChat = 200, chats = 300, maxText = 600
     var bySession: [String: [ChatLogEvent]] = [:]
     var order: [String] = [] // most recently touched first, for the cap
 
@@ -25,6 +26,8 @@ struct ChatEventStore: Codable {
     var data: Data? { try? JSONEncoder().encode(self) }
 
     mutating func add(_ e: ChatLogEvent, to sid: String) {
+        var e = e
+        if e.text.count > Self.maxText { e.text = String(e.text.prefix(Self.maxText)) + "…" } // a huge command
         bySession[sid, default: []].append(e)
         if bySession[sid]!.count > Self.perChat { bySession[sid]!.removeFirst(bySession[sid]!.count - Self.perChat) }
         order.removeAll { $0 == sid }; order.insert(sid, at: 0)

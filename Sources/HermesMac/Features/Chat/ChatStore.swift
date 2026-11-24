@@ -21,6 +21,8 @@ struct ChatEntry: Identifiable, Equatable {
     var expiredApproval: String?
     /// When this reply first asked for (or YOLO answered) an approval: where those lines go once saved as events.
     var approvalAt: Date?
+    /// Sticky: an answer to the current approval was sent at least once (its outcome may be unknown if it failed).
+    var approvalAnswerSent = false
     var answeringApproval = false
     var streaming = false
     var error: String?
@@ -574,7 +576,9 @@ final class ChatStore {
         // when it came up. Auto-approvals are saved as they happen (autoApprove). An answer that was in flight is
         // reported as unknown, not as "not run".
         if let cur = run(key), let c = cur.reply.expiredApproval, let sid = cur.session, !cur.withdrawn {
-            let text = cur.reply.answeringApproval ? "Approval outcome unknown: \(c)" : "Approval expired, not run: \(c)"
+            // "not run" only when no answer was ever sent; a failed send may still have reached Hermes.
+            let sent = cur.reply.answeringApproval || cur.reply.approvalAnswerSent
+            let text = sent ? "Approval outcome unknown: \(c)" : "Approval expired, not run: \(c)"
             saveEvents([ChatLogEvent(id: UUID().uuidString, date: cur.reply.approvalAt ?? cur.reply.date ?? .now,
                                      text: text, symbol: "clock.badge.xmark")], session: sid, registryKey: cur.registryKey)
         }
@@ -709,7 +713,7 @@ final class ChatStore {
     /// run is never left blocked with no way to answer (hermes-mac-1ll).
     func answer(_ a: ApprovalRequest, _ choice: String, entry: String) {
         guard let client else { return }
-        update(entry) { $0.answeringApproval = true }
+        update(entry) { $0.answeringApproval = true; $0.approvalAnswerSent = true }
         Task {
             do {
                 try await client.answerApproval(a, choice: choice)
@@ -753,13 +757,15 @@ final class ChatStore {
     private func autoApprove(_ a: ApprovalRequest, entry: String) {
         guard let client else { return }
         let what = a.command ?? a.description ?? "a command"
+        // Captured before the await: the run may finish (and leave `live`) while the answer is in flight.
+        let owner = live.first { $0.id == entry }
         Task {
             do {
                 try await client.answerApproval(a, choice: "once")
                 update(entry) { $0.autoApproved.append(what); if $0.approvalAt == nil { $0.approvalAt = .now } }
                 // Saved now (not at the run's end): the stored reply carries no record of it, and this must outlive
                 // a reload, a relaunch or a run that's let go. Shown inline meanwhile; merged from here on next load.
-                if let r = live.first(where: { $0.id == entry }), let sid = r.session {
+                if let r = owner, let sid = r.session {
                     saveEvents([ChatLogEvent(id: UUID().uuidString, date: .now, text: "Auto-approved (YOLO): \(what)",
                                              symbol: "bolt.fill")], session: sid, registryKey: r.registryKey)
                 }
@@ -848,13 +854,14 @@ final class ChatStore {
             // Its replies still running here: stop them and let go (their prompts must not linger in the registry).
             // As stop(): with a run id, stop it and cancel the task; still posting (no id), just let go, and drive
             // stops the server run itself once POST /v1/runs returns and finds the run gone.
-            for r in self.live where r.session == s.id {
-                if let id = r.runId {
-                    do { try await client.stopRun(id) }
-                    catch { runLog.error("delete: couldn't stop run \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]") }
-                    self.liveTasks[r.id]?.cancel(); self.liveTasks[r.id] = nil
-                }
-                self.live.removeAll { $0.id == r.id }
+            // Out of `live` first, all at once, so no drive step continues them across the awaits below.
+            let doomed = self.live.filter { $0.session == s.id }
+            self.live.removeAll { $0.session == s.id }
+            for r in doomed {
+                guard let id = r.runId else { self.liveTasks[r.id] = nil; continue } // drive stops it (see above)
+                self.liveTasks[r.id]?.cancel(); self.liveTasks[r.id] = nil
+                do { try await client.stopRun(id) }
+                catch { runLog.error("delete: couldn't stop run \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]") }
             }
             Self.forgetLocal(session: s.id) { keys[$0] ?? $0 }
             self.models.forget(session: s.id, key: keys["chats.modelChoices"] ?? "")
