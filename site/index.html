@@ -109,11 +109,18 @@ h3 { font-size: 17px; margin: 0 0 8px; }
 .shots figure { margin: 0; }
 .shots img { border-radius: 10px; box-shadow: 0 12px 40px rgba(20, 20, 60, .18), 0 0 0 .5px rgba(0,0,0,.12); }
 .shots figcaption { font-size: 14px; color: var(--ink-2); margin-top: 10px; }
-.phones { display: flex; gap: 22px; overflow-x: auto; padding: 4px 4px 18px; scroll-snap-type: x mandatory; }
+.phones { display: flex; gap: 22px; overflow-x: auto; padding: 18px 16px 40px; margin: -14px -16px -22px; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; }
 .phones figure { width: 250px; flex: none; margin: 0; scroll-snap-align: start; }
 .phones img { border-radius: 34px; box-shadow: 0 12px 40px rgba(20, 20, 60, .2), 0 0 0 .5px rgba(0,0,0,.15); }
 .phones figcaption { font-size: 14px; color: var(--ink-2); margin-top: 12px; }
 .phones:empty::before { content: "iPhone and iPad screenshots are on their way."; color: var(--ink-2); }
+
+/* Hover: a small lift, only where hovering exists and motion is welcome. The hero stays put (it's flush to the desk). */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .shots img, .phones img { transition: transform .25s ease, box-shadow .25s ease; }
+  .shots img:hover { transform: translateY(-4px) scale(1.01); box-shadow: 0 22px 60px rgba(20,20,60,.26), 0 0 0 .5px rgba(0,0,0,.12); }
+  .phones img:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 24px 60px rgba(20,20,60,.3), 0 0 0 .5px rgba(0,0,0,.15); }
+}
 
 /* Doesn't do */
 .nope { background: var(--surface); border-radius: 16px; padding: 30px 32px; margin-top: 72px; }
