@@ -152,9 +152,13 @@ struct CodeBlock: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 8)
             Divider().opacity(0.5)
+            // Height = the code's own height: in a tight container (the user's bubble) the horizontal ScrollView was
+            // squeezed to one truncated line.
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code).font(.system(.callout, design: .monospaced)).lineSpacing(2.5).padding(14).textSelection(.enabled)
+                    .fixedSize()
             }
+            .fixedSize(horizontal: false, vertical: true)
         }
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(nsColor: .textBackgroundColor).opacity(0.6)))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.separator.opacity(0.6)))
