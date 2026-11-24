@@ -649,12 +649,15 @@ final class ChatStore {
 
     /// Called on every list reload: when the server or profile changed, stop following the old one's runs
     /// (they go on server-side and stay persisted under their own key) and pick up this one's.
-    // AIDEV-NOTE: must run synchronously on a profile/server change BEFORE anything starts a run there; if a
-    // deferred reload() does it later, detachAll() kills the run just started in the new scope (dev-40 review #1).
     /// The current server's address changed under the same id (so the same registry key): drop its runs and
     /// re-read them against the new address.
     func reattach() { attachedKey = nil; syncScope() }
 
+    /// Bumped on every detach: a resume check that started before it must not attach (or drop) anything after.
+    @ObservationIgnored private var scopeGen = 0
+
+    // AIDEV-NOTE: must run synchronously on a profile/server change BEFORE anything starts a run there; if a
+    // deferred reload() does it later, detachAll() kills the run just started in the new scope (dev-40 review #1).
     func syncScope() {
         let key = registryKey
         guard key != attachedKey else { return }
@@ -664,6 +667,9 @@ final class ChatStore {
     }
 
     private func detachAll() {
+        scopeGen += 1
+        // Their approval cards go with them: a notification left up must not answer through the new connection.
+        for r in live { if let a = r.reply.approval { app?.notifier.approvalResolved(a) } }
         for t in liveTasks.values { t.cancel() }
         liveTasks = [:]
         if !live.isEmpty { runLog.info("detached \(self.live.count) run(s) on scope change [ALR-RUN-DETACH]") }
@@ -674,7 +680,7 @@ final class ChatStore {
     /// (replayed from the start into a fresh reply), finished or unknown ones are dropped.
     private func resumePersisted() {
         guard let client else { return }
-        let key = registryKey
+        let key = registryKey, gen = scopeGen
         var reg = RunRegistry(data: UserDefaults.standard.data(forKey: key))
         reg.prune()
         UserDefaults.standard.set(reg.data, forKey: key)
@@ -682,11 +688,12 @@ final class ChatStore {
             Task {
                 let st: RunStatus
                 do { st = try await client.runStatus(p.runId) } catch {
+                    guard gen == scopeGen else { return } // asked the old address (reattach) or an old scope
                     if let e = error as? HermesError, e.status == 404 { dropPersisted(p, key: key) }
                     else { runLog.info("resume check failed for \(p.runId, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-RESUME-ERR]") }
                     return
                 }
-                guard registryKey == key, !live.contains(where: { $0.runId == p.runId }) else { return }
+                guard gen == scopeGen, registryKey == key, !live.contains(where: { $0.runId == p.runId }) else { return }
                 // It may have been resumed and finished (unpersisted) by another pass while this check was in flight.
                 guard RunRegistry(data: UserDefaults.standard.data(forKey: key)).runs.contains(where: { $0.runId == p.runId }) else { return }
                 guard !st.isTerminal else { dropPersisted(p, key: key); return }
@@ -717,6 +724,9 @@ final class ChatStore {
     /// run is never left blocked with no way to answer (hermes-mac-1ll).
     func answer(_ a: ApprovalRequest, _ choice: String, entry: String) {
         guard let client else { return }
+        // Only for a run this connection follows: a card or notification left from a detached run (server or
+        // profile changed) would otherwise answer through the new connection.
+        guard live.contains(where: { $0.id == entry }) else { app?.flash("That reply is no longer followed here; open its chat to answer."); return }
         update(entry) { $0.answeringApproval = true; $0.approvalAnswerSent = true }
         Task {
             do {
