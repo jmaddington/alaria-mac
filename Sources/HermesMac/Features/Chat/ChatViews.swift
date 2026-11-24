@@ -567,6 +567,8 @@ struct TypingIndicator: View {
 struct Composer: View {
     @Environment(AppModel.self) private var model
     @FocusState private var focused: Bool
+    // Observed so the shortcuts and hints redraw when Settings > Chat changes; reads go through SendKey.current.
+    @AppStorage(SendKey.defaultsKey) private var sendKeyRaw = SendKey.return.rawValue
 
     var body: some View {
         @Bindable var chats = model.chats
@@ -584,6 +586,15 @@ struct Composer: View {
                 .lineLimit(1...10)
                 .focused($focused)
                 .onSubmit(send) // Return sends; ⌥Return inserts a newline (native vertical TextField behavior)
+                // ⇧Return also inserts a newline (what Slack/ChatGPT/Claude users expect): same action ⌥Return
+                // triggers in the field editor, so it lands at the cursor, not just at the end.
+                // With "Send with ⌘Return" (Settings > Chat) a plain Return is a newline too; ⌘Return sends.
+                .onKeyPress(.return, phases: .down) { press in
+                    let newline = press.modifiers == .shift || (press.modifiers.isEmpty && SendKey.current == .commandReturn)
+                    guard newline else { return .ignored }
+                    NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+                    return .handled
+                }
                 .padding(.vertical, 6)
             if chats.isStreaming {
                 if hasInput {
@@ -593,12 +604,12 @@ struct Composer: View {
                             Button("\(m.title)  \(BusyHint.shortcut(m))") { send(m) }
                         }
                         Divider()
-                        Text("Return: \(ChatStore.defaultBusyMode.title) (change in Settings > Chat)")
+                        Text("\(SendKey.current.label): \(ChatStore.defaultBusyMode.title) (change in Settings > Chat)")
                     } label: {
                         Image(systemName: "arrow.up.circle.fill").font(.system(size: 26)).foregroundStyle(Theme.accent)
                     } primaryAction: { send(nil) }
                     .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
-                    .help("\(ChatStore.defaultBusyMode.title) (Return). Click and hold for more.")
+                    .help("\(ChatStore.defaultBusyMode.title) (\(SendKey.current.label)). Click and hold for more.")
                     .accessibilityLabel("Send while Hermes is replying")
                     .disabled(tray.loading > 0)
                 }
@@ -639,7 +650,13 @@ struct Composer: View {
     // BusyHint.shortcut in sync.
     @ViewBuilder private var busyShortcuts: some View {
         Group {
-            Button("Steer") { send(.steer) }.keyboardShortcut(.return, modifiers: .command)
+            // In ⌘Return mode ⌘Return is "send" (the Settings default) and Steer moves to ⌃⌘Return.
+            if SendKey.current == .commandReturn {
+                Button("Send") { send(nil) }.keyboardShortcut(.return, modifiers: .command)
+                Button("Steer") { send(.steer) }.keyboardShortcut(.return, modifiers: [.command, .control])
+            } else {
+                Button("Steer") { send(.steer) }.keyboardShortcut(.return, modifiers: .command)
+            }
             Button("Stop and Send") { send(.interrupt) }.keyboardShortcut(.return, modifiers: [.command, .shift])
             Button("Queue") { send(.queue) }.keyboardShortcut(.return, modifiers: [.command, .option])
         }
@@ -660,7 +677,7 @@ struct Composer: View {
 struct BusyHint: View {
     static func shortcut(_ m: BusyInputMode) -> String {
         switch m {
-        case .steer: return "⌘↩"
+        case .steer: return SendKey.current == .commandReturn ? "⌃⌘↩" : "⌘↩"
         case .interrupt: return "⇧⌘↩"
         case .queue: return "⌥⌘↩"
         }
@@ -668,7 +685,7 @@ struct BusyHint: View {
     var body: some View {
         let d = ChatStore.defaultBusyMode
         let others = BusyInputMode.allCases.filter { $0 != d }.map { "\($0.title) \(Self.shortcut($0))" }
-        Text("Hermes is replying. Return: \(d.title). " + others.joined(separator: " · "))
+        Text("Hermes is replying. \(SendKey.current.label): \(d.title). " + others.joined(separator: " · "))
             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
 }
@@ -735,4 +752,12 @@ struct YoloToggle: View {
             Text("Alaria will approve every command Hermes asks to run in this chat, without asking you. Each one is listed in the chat. Other chats still ask.")
         }
     }
+}
+
+/// Which key sends a message (Settings > Chat); the other one inserts a newline. ⇧Return is always a newline.
+enum SendKey: String, CaseIterable {
+    case `return`, commandReturn
+    static let defaultsKey = "chat.sendKey"
+    static var current: SendKey { UserDefaults.standard.string(forKey: defaultsKey).flatMap(SendKey.init(rawValue:)) ?? .return }
+    var label: String { self == .return ? "Return" : "⌘Return" }
 }

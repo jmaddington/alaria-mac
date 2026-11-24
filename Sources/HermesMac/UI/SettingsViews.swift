@@ -146,16 +146,28 @@ struct ConnectionPane: View {
 /// Chat behaviour: what Return does while a reply is still running (busy input, like the Hermes TUI's).
 struct ChatPane: View {
     @AppStorage(ChatStore.busyModeKey) private var busyMode = BusyInputMode.queue.rawValue
+    @AppStorage(SendKey.defaultsKey) private var sendKey = SendKey.return.rawValue
 
     var body: some View {
         Form {
             SwiftUI.Section {
-                Picker("Return while Hermes is replying", selection: $busyMode) {
+                Picker("Send messages with", selection: $sendKey) {
+                    Text("Return").tag(SendKey.return.rawValue)
+                    Text("⌘Return").tag(SendKey.commandReturn.rawValue)
+                }
+                .pickerStyle(.radioGroup)
+            } header: { Text("Sending") } footer: {
+                Text(sendKey == SendKey.commandReturn.rawValue
+                     ? "Return starts a new line. ⇧Return does too."
+                     : "⇧Return or ⌥Return starts a new line.")
+            }
+            SwiftUI.Section {
+                Picker("Send while Hermes is replying", selection: $busyMode) {
                     ForEach(BusyInputMode.allCases, id: \.self) { m in Text("\(m.title)  \(BusyHint.shortcut(m))").tag(m.rawValue) }
                 }
                 .pickerStyle(.radioGroup)
             } header: { Text("Sending while busy") } footer: {
-                Text("Queue sends your message as the next turn when this one ends (shown as Queued; you can cancel it). Steer adds your words to the running reply after its next step, text only. Stop and Send ends the running reply first. The other two are always on their shortcuts, and in the send button's menu.")
+                Text("Queue sends your message as the next turn when this one ends (shown as Queued; you can cancel it). Steer adds your words to the running reply after its next step, text only (the Hermes terminal calls this redirecting). Stop and Send ends the running reply first, then sends. The other two are always on their shortcuts, and in the send button's menu.")
             }
         }
         .formStyle(.grouped)
