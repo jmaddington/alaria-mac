@@ -227,6 +227,8 @@ struct ConversationView: View {
     @ViewState private var followTail = true
     @ViewState private var userScrolling = false
     private var chats: ChatStore { model.chats }
+    /// A queued turn's reply placeholder stays out of the transcript until its run starts.
+    private var visibleEntries: [ChatEntry] { chats.entries.filter { !($0.role == .assistant && $0.queued) } }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -239,7 +241,7 @@ struct ConversationView: View {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 26) {
                             // A queued turn's reply placeholder stays out of the transcript until its run starts.
-                            ForEach(chats.entries.filter { !($0.role == .assistant && $0.queued) }) { e in EntryView(entry: e).id(e.id) }
+                            ForEach(visibleEntries) { e in EntryView(entry: e).id(e.id) }
                             Color.clear.frame(height: 1).id("bottom")
                         }
                         .frame(maxWidth: Theme.readingWidth)
@@ -267,7 +269,14 @@ struct ConversationView: View {
                         else if new.gap <= 24 { followTail = true }
                     }
                     .onChange(of: chats.entries.last(where: \.streaming)?.text ?? chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
-                    .onChange(of: chats.entries.count) {
+                    // Keyed on what's VISIBLE, not entries.count: a queued reply appearing when its run starts, or a
+                    // history reload after a run (same count, every id new), must also land at the bottom (dev-40).
+                    .onChange(of: visibleEntries.last?.id) {
+                        guard followTail else { return } // reading further up: leave the user where they are
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
+                    .onChange(of: visibleEntries.count) {
                         followTail = true
                         proxy.scrollTo("bottom", anchor: .bottom)
                         // Lazy rows above get measured after the first jump; land again once they have.
