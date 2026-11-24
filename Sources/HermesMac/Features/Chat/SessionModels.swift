@@ -107,9 +107,11 @@ extension ChatStore {
             if let d = models.defaultChoice, d.model == choice.model, choice.reasoningEffort == nil, !choice.fast {
                 models.pending = nil
                 app?.flash("New chat will use the server's default model")
+                logEvent("Model: server default", symbol: "cpu", session: nil)
             } else {
                 models.pending = choice
                 app?.flash("New chat will use \(choice.label)")
+                logEvent("Model: \(choice.label)", symbol: "cpu", session: nil)
             }
             return
         }
@@ -123,6 +125,7 @@ extension ChatStore {
                 if let i = sessions.firstIndex(where: { $0.id == s.id }) { sessions[i].model = rt.model ?? choice.model }
                 modelLog.info("locked \(s.id, privacy: .public) to \(choice.model, privacy: .public) [ALR-MODEL1]")
                 app?.flash(wasStreaming ? "\(choice.label) from the next message" : "This chat now uses \(choice.label)")
+                logEvent("Model: \(choice.label)" + (wasStreaming ? " (from the next message)" : ""), symbol: "cpu", session: s.id)
             } catch {
                 modelLog.error("model lock failed for \(s.id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-MODEL-ERR]")
                 app?.report("Couldn't switch model", error)

@@ -28,6 +28,8 @@ struct ChatEntry: Identifiable, Equatable {
     var queued = false
     /// Text the user steered this reply with while it ran (busy input "steer", /steer).
     var steers: [String] = []
+    /// Set on a logged chat event (YOLO, model, rename): a one-line marker in the transcript (ChatEventLog.swift).
+    var symbol: String?
 }
 
 /// A turn Alaria started (or re-attached to after a relaunch) and is following over /v1/runs (bead hermes-mac-wny).
@@ -82,6 +84,8 @@ final class ChatStore {
     // Each run's reply is owned by `live` and mirrored into `entries` while its chat is open (mutate/update).
     // Never key anything on streamTask-style "the one stream": several chats (and a queue) can run at once.
     private(set) var live: [LiveRun] = []
+    /// Events logged in the blank chat before its session exists; saved to it once created (ChatEventLog.swift).
+    var pendingEvents: [ChatLogEvent] = []
     @ObservationIgnored private var liveTasks: [String: Task<Void, Never>] = [:]
     /// Bumped by Cmd-R: follow loops waiting out a backoff retry right away.
     @ObservationIgnored private var kick = 0
@@ -171,7 +175,7 @@ final class ChatStore {
                 let starts = runs.compactMap { $0.createdAt ?? ($0.queued ? nil : lastUser) }
                 let cut = RunHistory.cut(msgs, liveRunsCreatedAt: starts)
                 // Keep anything sent while history was loading (hermes-mac-7j1): history goes in front of it.
-                let history = Self.entries(from: cut)
+                let history = mergeEvents(Self.entries(from: cut), session: id)
                 let known = Set(history.map(\.id))
                 entries = history + entries.filter { !known.contains($0.id) }
             } catch {
@@ -239,6 +243,7 @@ final class ChatStore {
         draft = ""
         attachments.clear()
         models.pending = nil // new chats follow the server's default unless a model is picked for them
+        pendingEvents = []
         // The server's default can change (Settings > Model, another client): refresh what the menu shows.
         Task { await models.load(client, force: true) }
     }
@@ -338,12 +343,14 @@ final class ChatStore {
         do {
             guard var r = run(key) else { return }
             if r.session == nil {
+                let stillHereBeforeCreate = isSelected(r)
                 let s = try await client.createSession(title: nil, model: models.pending) // a model picked pre-create
                 // Detached (scope change) or stopped while creating: don't adopt the session into whatever is open now.
                 try Task.checkCancellation()
                 guard run(key) != nil else { return }
                 if armYolo { setYolo(true, for: s.id) }
                 models.adoptPending(for: s.id)
+                if stillHereBeforeCreate { adoptPendingEvents(for: s.id) }
                 sessions.insert(s, at: 0)
                 let stillHere = isSelected(r)
                 mutate(key) { $0.session = s.id }
@@ -709,6 +716,10 @@ final class ChatStore {
     }
 
     func setYolo(_ on: Bool, for sid: String?) {
+        if on != isYolo(sid) {
+            logEvent(on ? "YOLO on: commands in this chat run without asking" : "YOLO off: commands ask first",
+                     symbol: on ? "bolt.fill" : "bolt.slash", session: sid)
+        }
         guard let sid else { yoloNewChat = on; return }
         var ids = (UserDefaults.standard.stringArray(forKey: yoloKey) ?? []).filter { $0 != sid }
         if on { ids.insert(sid, at: 0) }
@@ -737,7 +748,11 @@ final class ChatStore {
 
     func rename(_ s: HermesSession, to title: String) {
         guard let client else { return }
-        app?.run("Rename") { _ = try await client.updateSession(s.id, title: title); await self.reload() }
+        app?.run("Rename") {
+            _ = try await client.updateSession(s.id, title: title)
+            self.logEvent("Renamed to “\(title)”", symbol: "pencil", session: s.id)
+            await self.reload()
+        }
     }
 
     func togglePin(_ s: HermesSession) {

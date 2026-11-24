@@ -203,13 +203,7 @@ struct SessionRow: View {
     /// What the reply is doing right now (hermes-mac: list shows a response began, not "Empty").
     private var liveStatus: String? {
         guard let r = run?.reply else { return nil }
-        if r.queued { return "Queued" }
-        if r.approval != nil { return "Waiting for your approval" }
-        if let t = r.tools.last(where: { $0.state == .running }) { return "Running \(t.name.replacingOccurrences(of: "_", with: " "))…" }
-        if !r.text.isEmpty { return "Writing…" }
-        if !r.thinking.isEmpty { return "Thinking…" }
-        if !r.tools.isEmpty { return "Working…" }
-        return "Starting…"
+        return r.queued ? "Queued" : r.progressText
     }
     private var detail: String {
         if let p = session.preview.map(MessageText.display), !p.isEmpty, p != session.title { return p }
@@ -397,6 +391,16 @@ struct EntryView: View {
                     }
                 }
             }
+        case .system where entry.symbol != nil:
+            // A logged chat event (YOLO, model, rename): one quiet centered line with its time (ChatEventLog.swift).
+            HStack(spacing: 6) {
+                Image(systemName: entry.symbol ?? "info.circle")
+                Text(entry.text)
+                if let d = entry.date { Text(d.formatted(date: .omitted, time: .shortened)).foregroundStyle(.tertiary) }
+            }
+            .font(.caption).foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
         default:
             VStack(alignment: .leading, spacing: 12) {
                 if !entry.thinking.isEmpty {
@@ -426,7 +430,15 @@ struct EntryView: View {
                 }
                 if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
                 if !entry.text.isEmpty { MarkdownView(text: entry.streaming ? Self.holdBackPartialMarker(entry.text) : Self.trimDanglingMarker(entry.text)) }
-                else if entry.streaming && entry.thinking.isEmpty && entry.tools.isEmpty { TypingIndicator() }
+                // While the reply runs, always say so at its foot: dots plus what it's doing right now.
+                if entry.streaming && !entry.queued, let status = entry.progressText {
+                    HStack(spacing: 8) {
+                        RunningDots()
+                        Text(status).font(.callout).foregroundStyle(Theme.accent)
+                            .contentTransition(.opacity).animation(.easeInOut(duration: 0.2), value: status)
+                    }
+                    .accessibilityElement(children: .combine).accessibilityLabel("Hermes is working: \(status)")
+                }
                 if entry.error == "Stopped" {
                     Label("Stopped", systemImage: "stop.circle").font(.caption).foregroundStyle(.secondary)
                 } else if let err = entry.error {
@@ -760,4 +772,17 @@ enum SendKey: String, CaseIterable {
     static let defaultsKey = "chat.sendKey"
     static var current: SendKey { UserDefaults.standard.string(forKey: defaultsKey).flatMap(SendKey.init(rawValue:)) ?? .return }
     var label: String { self == .return ? "Return" : "⌘Return" }
+}
+
+extension ChatEntry {
+    /// What a running reply is doing right now, for the chat list row and the reply's own footer.
+    var progressText: String? {
+        guard streaming else { return nil }
+        if approval != nil { return "Waiting for your approval" }
+        if let t = tools.last(where: { $0.state == .running }) { return "Running \(t.name.replacingOccurrences(of: "_", with: " "))…" }
+        if !text.isEmpty { return "Writing…" }
+        if !thinking.isEmpty { return "Thinking…" }
+        if !tools.isEmpty { return "Working…" }
+        return "Starting…"
+    }
 }
