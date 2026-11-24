@@ -580,7 +580,7 @@ final class ChatStore {
             let sent = cur.reply.answeringApproval || cur.reply.approvalAnswerSent
             let text = sent ? "Approval outcome unknown: \(c)" : "Approval expired, not run: \(c)"
             saveEvents([ChatLogEvent(id: UUID().uuidString, date: cur.reply.approvalAt ?? cur.reply.date ?? .now,
-                                     text: text, symbol: "clock.badge.xmark")], session: sid, registryKey: cur.registryKey)
+                                     text: text, symbol: "clock.badge.xmark", inTurn: true)], session: sid, registryKey: cur.registryKey)
         }
         live.removeAll { $0.id == key }
         liveTasks[key] = nil
@@ -651,6 +651,10 @@ final class ChatStore {
     /// (they go on server-side and stay persisted under their own key) and pick up this one's.
     // AIDEV-NOTE: must run synchronously on a profile/server change BEFORE anything starts a run there; if a
     // deferred reload() does it later, detachAll() kills the run just started in the new scope (dev-40 review #1).
+    /// The current server's address changed under the same id (so the same registry key): drop its runs and
+    /// re-read them against the new address.
+    func reattach() { attachedKey = nil; syncScope() }
+
     func syncScope() {
         let key = registryKey
         guard key != attachedKey else { return }
@@ -768,7 +772,7 @@ final class ChatStore {
                 // a reload, a relaunch or a run that's let go. Shown inline meanwhile; merged from here on next load.
                 if let r = owner, let sid = r.session {
                     saveEvents([ChatLogEvent(id: UUID().uuidString, date: .now, text: "Auto-approved (YOLO): \(what)",
-                                             symbol: "bolt.fill")], session: sid, registryKey: r.registryKey)
+                                             symbol: "bolt.fill", inTurn: true)], session: sid, registryKey: r.registryKey)
                 }
             } catch {
                 // A replayed request (re-attach after relaunch) may already be settled: nothing to ask then.

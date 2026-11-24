@@ -245,6 +245,7 @@ final class AppModel {
         settings = s
         if serverChanged { resetServerState() } // never send to a session id that only existed on the old server
         connect()
+        if serverChanged { chats.reattach() } // same id, same registry key: syncScope alone wouldn't detach (dev-40)
     }
 
     /// Switches the whole app to another saved server: clears everything from the old one, then connects.

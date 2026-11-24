@@ -10,6 +10,9 @@ struct ChatLogEvent: Codable, Equatable {
     var date: Date
     var text: String
     var symbol: String
+    /// Belongs inside a turn (a YOLO approval, an expired one): shown after that turn's user row, before its answer,
+    /// whatever the answer row's date. nil in events saved before this field existed. (Same as talaria-ios ef6638a.)
+    var inTurn: Bool? = nil
 
     var entry: ChatEntry { ChatEntry(id: "ev-\(id)", role: .system, text: text, date: date, symbol: symbol) }
 }
@@ -43,9 +46,15 @@ struct ChatEventStore: Codable {
     static func merge(_ history: [ChatEntry], _ events: [ChatLogEvent]) -> [ChatEntry] {
         guard !events.isEmpty else { return history }
         var out: [ChatEntry] = [], pending = events.sorted { $0.date < $1.date }
-        for h in history {
+        for (i, h) in history.enumerated() {
             if let d = h.date { while let e = pending.first, e.date < d { out.append(e.entry); pending.removeFirst() } }
             out.append(h)
+            guard h.role == .user else { continue }
+            // A merged assistant turn carries its first row's date, which can sort these after the answer.
+            let next = history[(i + 1)...].first { $0.role == .user }?.date ?? .distantFuture
+            let mine = pending.filter { $0.inTurn == true && $0.date < next }
+            out += mine.map(\.entry)
+            pending.removeAll { e in mine.contains { $0.id == e.id } }
         }
         return out + pending.map(\.entry)
     }
