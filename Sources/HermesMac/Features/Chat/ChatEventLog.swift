@@ -30,6 +30,8 @@ struct ChatEventStore: Codable {
         while order.count > Self.chats { bySession[order.removeLast()] = nil }
     }
 
+    mutating func remove(_ sid: String) { bySession[sid] = nil; order.removeAll { $0 == sid } }
+
     /// History plus this chat's events, in time order (events with the same date go after the message).
     static func merge(_ history: [ChatEntry], _ events: [ChatLogEvent]) -> [ChatEntry] {
         guard !events.isEmpty else { return history }
@@ -63,7 +65,42 @@ extension ChatStore {
         pendingEvents = []
     }
 
+    /// A deleted chat takes its events (a renamed title, among others) and its model choice with it.
+    func forgetEvents(session sid: String) {
+        var store = ChatEventStore(data: UserDefaults.standard.data(forKey: eventsKey))
+        guard store.bySession[sid] != nil else { return }
+        store.remove(sid)
+        UserDefaults.standard.set(store.data, forKey: eventsKey)
+    }
+
     func mergeEvents(_ history: [ChatEntry], session sid: String) -> [ChatEntry] {
         ChatEventStore.merge(history, ChatEventStore(data: UserDefaults.standard.data(forKey: eventsKey)).bySession[sid] ?? [])
+    }
+}
+
+/// Per-server/per-profile chat data kept on this Mac, outside Hermes. Key = base + server scope + ".<profile>".
+// AIDEV-NOTE: privacy. Removing a server or deleting a profile must purge these (dev-40 found renamed titles
+// surviving deletes; iOS talaria-ios c344ab1). Add any new per-scope chat key to `bases`.
+enum ChatLocalData {
+    static let bases = ["chats.events", "chats.modelChoices", "chats.activeRuns"]
+
+    /// Server scope for a server id ("" for the default server, as ConnectionSettings.scope).
+    static func scope(forServer id: String) -> String { id == "default" ? "" : ".srv.\(id)" }
+
+    /// True when `key` holds data of that server (every profile), or of one profile when `profile` is set.
+    static func belongs(_ key: String, scope: String, profile: String?) -> Bool {
+        bases.contains { base in
+            if let profile { return key == base + scope + ".\(profile)" }
+            guard key.hasPrefix(base + scope) else { return false }
+            let rest = key.dropFirst(base.count + scope.count)
+            // The default server's scope is "": its prefix also matches other servers' ".srv.…" keys.
+            return rest.isEmpty || (rest.hasPrefix(".") && !(scope.isEmpty && rest.hasPrefix(".srv.")))
+        }
+    }
+
+    static func purge(scope: String, profile: String? = nil, defaults: UserDefaults = .standard) {
+        for key in defaults.dictionaryRepresentation().keys where belongs(key, scope: scope, profile: profile) {
+            defaults.removeObject(forKey: key)
+        }
     }
 }

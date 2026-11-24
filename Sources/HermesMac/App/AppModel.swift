@@ -246,7 +246,9 @@ final class AppModel {
 
     func removeServer(_ id: String) {
         let wasCurrent = id == settings.id
+        guard servers.count > 1 else { return } // remove() keeps the last server; so must its data
         ConnectionSettings.remove(id)
+        ChatLocalData.purge(scope: ChatLocalData.scope(forServer: id))
         servers = ConnectionSettings.all()
         if wasCurrent, let first = servers.first { settings = first; resetServerState(); profiles.serverChanged(); connect() }
     }

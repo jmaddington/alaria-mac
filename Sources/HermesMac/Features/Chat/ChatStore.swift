@@ -823,6 +823,8 @@ final class ChatStore {
         guard let client else { return }
         app?.run("Delete") {
             try await client.deleteSession(s.id)
+            self.forgetEvents(session: s.id)
+            self.models.forget(session: s.id)
             if self.selection == s.id { self.newChat() }
             self.sessions.removeAll { $0.id == s.id }
         }

@@ -182,6 +182,7 @@ final class ProfileStore {
         if current == name { _ = await switchTo(own) }
         try await c.deleteProfile(name)
         saveKey(nil, for: name, scope: scope)
+        ChatLocalData.purge(scope: scope, profile: name)
         if gen == generation { await load() }
     }
 
