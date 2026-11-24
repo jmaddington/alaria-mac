@@ -15,7 +15,7 @@ DMG=${1:?usage: make-appcast.sh <dmg>}
 [[ -f $DMG ]] || { echo "no such file: $DMG"; exit 1; }
 VERSION=${VERSION:?set VERSION}
 BUILD=${BUILD:?set BUILD}
-REPO=${GITHUB_REPOSITORY:-jmaddington/hermes-mac}
+REPO=${GITHUB_REPOSITORY:-jmaddington/alaria-mac}
 MIN_OS=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" Resources/Info.plist)
 BIN=$(scripts/ci/sparkle-tools.sh)
 

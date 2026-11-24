@@ -14,7 +14,7 @@
     <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
     <key>NSHighResolutionCapable</key><true/>
     <!-- Sparkle auto-update (hermes-mac-d3k): feed = appcast.xml on the latest GitHub Release; see docs/agents/release.md. -->
-    <key>SUFeedURL</key><string>https://github.com/jmaddington/hermes-mac/releases/latest/download/appcast.xml</string>
+    <key>SUFeedURL</key><string>https://github.com/jmaddington/alaria-mac/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key><string>7qHjhqUb3bd0eU23RiOCkc/djtIs6h37IsK1GW/F1RQ=</string>
     <key>SUEnableAutomaticChecks</key><true/>
     <key>SUScheduledCheckInterval</key><integer>86400</integer>

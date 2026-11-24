@@ -3,7 +3,7 @@
 #   scripts/ci/set-release-secrets.sh ~/path/DeveloperIDApplication.p12 ~/.appstoreconnect/private_keys/AuthKey_XXXX.p8
 # Prompts for the .p12 password and the App Store Connect issuer ID; nothing is echoed or written to disk.
 set -euo pipefail
-REPO=${REPO:-jmaddington/hermes-mac}
+REPO=${REPO:-jmaddington/alaria-mac}
 P12=${1:?usage: set-release-secrets.sh <DeveloperID.p12> <AuthKey_ID.p8>}
 P8=${2:?usage: set-release-secrets.sh <DeveloperID.p12> <AuthKey_ID.p8>}
 KEY_ID=${${P8:t:r}#AuthKey_}

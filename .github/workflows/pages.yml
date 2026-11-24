@@ -1,6 +1,6 @@
 name: Pages
 
-# Publishes site/ to https://jmaddington.github.io/hermes-mac/ (the Alaria website).
+# Publishes site/ to https://jmaddington.github.io/alaria-mac/ (the Alaria website).
 on:
   push:
     branches: [main]
