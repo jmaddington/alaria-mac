@@ -759,6 +759,7 @@ final class ChatStore {
         let what = a.command ?? a.description ?? "a command"
         // Captured before the await: the run may finish (and leave `live`) while the answer is in flight.
         let owner = live.first { $0.id == entry }
+        update(entry) { $0.approvalAnswerSent = true }
         Task {
             do {
                 try await client.answerApproval(a, choice: "once")
@@ -854,16 +855,18 @@ final class ChatStore {
             // Its replies still running here: stop them and let go (their prompts must not linger in the registry).
             // As stop(): with a run id, stop it and cancel the task; still posting (no id), just let go, and drive
             // stops the server run itself once POST /v1/runs returns and finds the run gone.
-            // Out of `live` first, all at once, so no drive step continues them across the awaits below.
+            // Out of `live` and local state first, in one synchronous step: nothing may re-attach or re-arm YOLO
+            // for it across the awaits below, and a late YOLO answer must not write its events back.
             let doomed = self.live.filter { $0.session == s.id }
             self.live.removeAll { $0.session == s.id }
+            Self.deletedSessions.insert(s.id)
+            Self.forgetLocal(session: s.id) { keys[$0] ?? $0 }
             for r in doomed {
                 guard let id = r.runId else { self.liveTasks[r.id] = nil; continue } // drive stops it (see above)
                 self.liveTasks[r.id]?.cancel(); self.liveTasks[r.id] = nil
                 do { try await client.stopRun(id) }
                 catch { runLog.error("delete: couldn't stop run \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]") }
             }
-            Self.forgetLocal(session: s.id) { keys[$0] ?? $0 }
             self.models.forget(session: s.id, key: keys["chats.modelChoices"] ?? "")
             self.yoloVersion += 1
             if self.selection == s.id { self.newChat() }

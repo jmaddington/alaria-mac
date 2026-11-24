@@ -27,7 +27,10 @@ struct ChatEventStore: Codable {
 
     mutating func add(_ e: ChatLogEvent, to sid: String) {
         var e = e
-        if e.text.count > Self.maxText { e.text = String(e.text.prefix(Self.maxText)) + "…" } // a huge command
+        if e.text.count > Self.maxText { // a huge command: keep both ends, say how much is gone
+            let n = e.text.count, keep = Self.maxText / 2
+            e.text = String(e.text.prefix(keep)) + " …[\(n - 2 * keep) of \(n) characters omitted]… " + String(e.text.suffix(keep))
+        }
         bySession[sid, default: []].append(e)
         if bySession[sid]!.count > Self.perChat { bySession[sid]!.removeFirst(bySession[sid]!.count - Self.perChat) }
         order.removeAll { $0 == sid }; order.insert(sid, at: 0)
@@ -73,12 +76,15 @@ extension ChatStore {
     /// `registryKey` is the run's own (LiveRun.registryKey): its events land in that run's server + profile, even if
     /// the app has switched since.
     func saveEvents(_ events: [ChatLogEvent], session sid: String, registryKey: String) {
-        guard !events.isEmpty, registryKey.hasPrefix("chats.activeRuns") else { return }
+        guard !events.isEmpty, registryKey.hasPrefix("chats.activeRuns"), !Self.deletedSessions.contains(sid) else { return }
         let key = "chats.events" + registryKey.dropFirst("chats.activeRuns".count)
         var store = ChatEventStore(data: UserDefaults.standard.data(forKey: key))
         for e in events { store.add(e, to: sid) }
         UserDefaults.standard.set(store.data, forKey: key)
     }
+
+    /// Chats deleted this launch: a late write (a YOLO answer landing after the delete) must not bring their data back.
+    static var deletedSessions: Set<String> = []
 
     /// The current server + profile's key for one of the per-chat stores (ChatLocalData.bases).
     func localKey(_ base: String) -> String { base + ConnectionSettings.scope + (client?.profile.map { ".\($0)" } ?? "") }
