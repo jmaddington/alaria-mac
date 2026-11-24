@@ -110,8 +110,9 @@ h3 { font-size: 17px; margin: 0 0 8px; }
 .shots img { border-radius: 10px; box-shadow: 0 12px 40px rgba(20, 20, 60, .18), 0 0 0 .5px rgba(0,0,0,.12); }
 .shots figcaption { font-size: 14px; color: var(--ink-2); margin-top: 10px; }
 .phones { display: flex; gap: 22px; overflow-x: auto; padding: 4px 4px 18px; scroll-snap-type: x mandatory; }
-.phones img { width: 250px; flex: none; border-radius: 34px; scroll-snap-align: start;
-  box-shadow: 0 12px 40px rgba(20, 20, 60, .2), 0 0 0 .5px rgba(0,0,0,.15); }
+.phones figure { width: 250px; flex: none; margin: 0; scroll-snap-align: start; }
+.phones img { border-radius: 34px; box-shadow: 0 12px 40px rgba(20, 20, 60, .2), 0 0 0 .5px rgba(0,0,0,.15); }
+.phones figcaption { font-size: 14px; color: var(--ink-2); margin-top: 12px; }
 .phones:empty::before { content: "iPhone and iPad screenshots are on their way."; color: var(--ink-2); }
 
 /* Doesn't do */
@@ -286,7 +287,11 @@ fetch("shots.json").then(r => r.ok ? r.json() : null).then(s => {
   }
   const ios = document.getElementById("ios-shots");
   for (const m of s.ios || []) {
-    const i = new Image(); i.src = m.src; i.alt = m.alt; i.loading = "lazy"; ios.append(i);
+    const f = document.createElement("figure");
+    const i = new Image(); i.src = m.src; i.alt = m.alt; i.loading = "lazy";
+    f.append(i);
+    if (m.caption) { const c = document.createElement("figcaption"); c.textContent = m.caption; f.append(c); }
+    ios.append(f);
   }
 }).catch(() => {});
 </script>

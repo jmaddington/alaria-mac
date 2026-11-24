@@ -5,5 +5,13 @@
     {"src": "img/mac/04-commands.png", "alt": "The slash command menu open over the composer, listing model, reasoning, yolo, retry, stop and more.", "caption": "Type / for commands like switching the model or turning on YOLO."},
     {"src": "img/mac/05-skills.png", "alt": "The Skills screen listing installed skills grouped by category.", "caption": "Skills, scheduled jobs, tools and memory each get a proper screen."}
   ],
-  "ios": []
+  "ios": [
+    {"src": "img/ios/01-chats.png", "alt": "The iPhone chat list for the Demo profile, with six chats and their first lines.", "caption": "Your chats, per profile. Switch profile or server from the button at the top left."},
+    {"src": "img/ios/02-chat.png", "alt": "A chat where Hermes used the terminal to benchmark a Python loop against sum(range()) and answered with two small tables.", "caption": "Replies render Markdown, tables and code, and show which tools Hermes used."},
+    {"src": "img/ios/03-approval.png", "alt": "An approval card asking to run a command that ends in rm -rf, with Allow Once, Allow for Chat, Always Allow and Deny.", "caption": "Hermes asks before running risky commands. You answer from your phone."},
+    {"src": "img/ios/04-voice.png", "alt": "Voice mode: a glowing orb on a dark screen labelled Listening, with mute and close buttons.", "caption": "Voice mode. Talk, it answers out loud, you can interrupt."},
+    {"src": "img/ios/05-scheduled.png", "alt": "A scheduled task called Morning briefing that runs weekdays at 8am, with Run Now and Pause.", "caption": "Scheduled tasks, written the way you'd say them."},
+    {"src": "img/ios/06-skills.png", "alt": "The Skills tab listing installed skills grouped by category.", "caption": "Skills, grouped the way Hermes groups them."},
+    {"src": "img/ios/07-settings.png", "alt": "iPhone Settings with the server, profile, voice, reply and link options.", "caption": "Settings. Links can open inside the app, in Safari, or inside only when they point at your Hermes."}
+  ]
 }
