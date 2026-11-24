@@ -100,6 +100,8 @@ final class ChatStore {
     /// Chats with a run Alaria is following, for the list's "responding" indicator. Runs started by other
     /// clients aren't known: Hermes exposes no per-session running state.
     var runningSessions: Set<String> { Set(live.compactMap(\.session)) }
+    /// The chat's oldest live run (the one actually responding), for the list row's live title and status.
+    func liveRun(for session: String) -> LiveRun? { live.first { $0.session == session && !$0.queued } ?? live.first { $0.session == session } }
 
     private var loadedFor: String?
     /// Set when a chat's history failed to load; the conversation shows it with Try Again (hermes-mac-nze).

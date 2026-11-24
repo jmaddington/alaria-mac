@@ -168,7 +168,7 @@ struct SessionRow: View {
                 if session.source == "cron" {
                     Image(systemName: "clock").font(.caption2).foregroundStyle(.secondary).help("Scheduled job run").accessibilityLabel("Scheduled job run")
                 }
-                Text(session.displayTitle).font(.body.weight(.medium)).lineLimit(1)
+                Text(title).font(.body.weight(.medium)).lineLimit(1)
                 Spacer(minLength: 4)
                 // A reply Alaria is following (any chat, not just the open one); other clients' runs aren't visible.
                 if model.chats.runningSessions.contains(session.id) {
@@ -182,10 +182,34 @@ struct SessionRow: View {
             }
             HStack(spacing: 6) {
                 if let src = session.source, src != "api_server", src != "desktop" { Pill(text: src) }
-                Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                if let status = liveStatus {
+                    Text(status).font(.callout).foregroundStyle(Theme.accent).lineLimit(1)
+                        .contentTransition(.opacity).animation(.easeInOut(duration: 0.2), value: status)
+                } else {
+                    Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
         }
         .padding(.vertical, 3)
+    }
+    private var run: LiveRun? { model.chats.liveRun(for: session.id) }
+    /// A brand-new chat has no title or preview until the server catches up: show what was asked meanwhile.
+    private var title: String {
+        if (session.title ?? "").isEmpty, (session.preview ?? "").isEmpty, let t = run?.user.text, !t.isEmpty {
+            return String(MessageText.display(t).prefix(60))
+        }
+        return session.displayTitle
+    }
+    /// What the reply is doing right now (hermes-mac: list shows a response began, not "Empty").
+    private var liveStatus: String? {
+        guard let r = run?.reply else { return nil }
+        if r.queued { return "Queued" }
+        if r.approval != nil { return "Waiting for your approval" }
+        if let t = r.tools.last(where: { $0.state == .running }) { return "Running \(t.name.replacingOccurrences(of: "_", with: " "))…" }
+        if !r.text.isEmpty { return "Writing…" }
+        if !r.thinking.isEmpty { return "Thinking…" }
+        if !r.tools.isEmpty { return "Working…" }
+        return "Starting…"
     }
     private var detail: String {
         if let p = session.preview.map(MessageText.display), !p.isEmpty, p != session.title { return p }
