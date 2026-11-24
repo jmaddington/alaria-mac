@@ -8,7 +8,9 @@ import SwiftUI
 private let keychainLog = Logger(subsystem: "net.jmaddington.hermes", category: "keychain")
 
 enum Keychain {
-    static let service = "net.jmaddington.hermes"
+    // AIDEV-NOTE: follows the bundle id so a side-by-side copy (e.g. net.jmaddington.hermes.shots for website
+    // screenshots) never reads or overwrites the real app's keys. The shipping app's id IS this string.
+    static let service = Bundle.main.bundleIdentifier ?? "net.jmaddington.hermes"
     static func get(_ account: String) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecReturnData as String: true]
