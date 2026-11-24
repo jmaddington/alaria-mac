@@ -865,13 +865,25 @@ final class ChatStore {
         // Captured before the await: a server/profile switch during the request must not aim the cleanup elsewhere.
         let keys = Dictionary(uniqueKeysWithValues: ChatLocalData.bases.map { ($0, localKey($0)) })
         app?.run("Delete") {
+            // AIDEV-NOTE: security. Stop its replies FIRST and keep the chat if a stop is refused: deleting first
+            // would leave an agent (maybe mid-YOLO) running with no chat, Stop button or approval card (dev-40).
+            // 404/409 = already gone/finished. A run still posting (no id) is stopped by drive once it gets one
+            // and finds itself gone from `live`.
+            for r in self.live where r.session == s.id {
+                guard let id = r.runId else { continue }
+                do { try await client.stopRun(id) } catch let e as HermesError where e.status == 404 || e.status == 409 {
+                } catch {
+                    runLog.error("delete: couldn't stop run \(id, privacy: .public), chat kept: \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]")
+                    throw error // run() reports "Delete failed"; the chat stays, with its Stop button
+                }
+            }
             try await client.deleteSession(s.id)
-            // Its replies still running here: stop them and let go (their prompts must not linger in the registry).
-            // As stop(): with a run id, stop it and cancel the task; still posting (no id), just let go, and drive
-            // stops the server run itself once POST /v1/runs returns and finds the run gone.
-            // Out of `live` and local state first, in one synchronous step: nothing may re-attach or re-arm YOLO
-            // for it across the awaits below, and a late YOLO answer must not write its events back.
-            let doomed = self.live.filter { $0.session == s.id }
+            // Then out of `live` and local state in one synchronous step: nothing may re-attach or re-arm YOLO for
+            // it, and a late YOLO answer must not write its events back (tombstone).
+            for r in self.live where r.session == s.id {
+                if r.runId != nil { self.liveTasks[r.id]?.cancel() }
+                self.liveTasks[r.id] = nil
+            }
             self.live.removeAll { $0.session == s.id }
             Self.deletedSessions.insert(s.id)
             Self.forgetLocal(session: s.id) { keys[$0] ?? $0 }
@@ -879,12 +891,6 @@ final class ChatStore {
             self.yoloVersion += 1
             if self.selection == s.id { self.newChat() }
             self.sessions.removeAll { $0.id == s.id }
-            for r in doomed {
-                guard let id = r.runId else { self.liveTasks[r.id] = nil; continue } // drive stops it (see above)
-                self.liveTasks[r.id]?.cancel(); self.liveTasks[r.id] = nil
-                do { try await client.stopRun(id) }
-                catch { runLog.error("delete: couldn't stop run \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]") }
-            }
         }
     }
 
