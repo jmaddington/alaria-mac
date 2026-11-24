@@ -771,6 +771,10 @@ final class ChatStore {
 
     private func autoApprove(_ a: ApprovalRequest, entry: String) {
         guard let client else { return }
+        // A chat being deleted gets its cards back instead: nothing runs unasked while its replies are stopped.
+        if let sid = live.first(where: { $0.id == entry })?.session, deleting.contains(sid) {
+            update(entry) { $0.approval = a }; return
+        }
         let what = a.command ?? a.description ?? "a command"
         // Captured before the await: the run may finish (and leave `live`) while the answer is in flight.
         let owner = live.first { $0.id == entry }
@@ -866,7 +870,7 @@ final class ChatStore {
         // Captured before the await: a server/profile switch during the request must not aim the cleanup elsewhere.
         let keys = Dictionary(uniqueKeysWithValues: ChatLocalData.bases.map { ($0, localKey($0)) })
         // No new turn may start in it while its replies are stopped and it's deleted (start() checks this).
-        deleting.insert(s.id)
+        guard deleting.insert(s.id).inserted else { app?.flash("This chat is already being deleted."); return }
         app?.run("Delete") {
             defer { self.deleting.remove(s.id) }
             // AIDEV-NOTE: security. Stop its replies FIRST and keep the chat if a stop is refused: deleting first
@@ -881,7 +885,9 @@ final class ChatStore {
                 let persisted = RunRegistry(data: UserDefaults.standard.data(forKey: keys["chats.activeRuns"] ?? "")).runs(in: s.id)
                 let ids = Set(self.live.filter { $0.session == s.id }.compactMap(\.runId) + persisted.map(\.runId)).subtracting(stopped)
                 if ids.isEmpty { break }
-                for id in ids {
+                // Queued turns first, so none starts once the active one is stopped.
+                let queued = Set(self.live.filter { $0.queued }.compactMap(\.runId) + persisted.filter(\.queued).map(\.runId))
+                for id in ids.sorted(by: { queued.contains($0) && !queued.contains($1) }) {
                     do { try await client.stopRun(id) } catch let e as HermesError where e.status == 404 || e.status == 409 {
                     } catch {
                         runLog.error("delete: couldn't stop run \(id, privacy: .public), chat kept: \(error.localizedDescription, privacy: .public) [ALR-RUN-DEL-STOP]")
