@@ -95,6 +95,8 @@ final class ChatStore {
     @ObservationIgnored private var kick = 0
     /// Bumped by New Chat; a run still creating its session only takes over the selection in its own blank chat.
     private var blankGen = 0
+    /// In-flight createSession per blank chat (registryKey#blankGen), shared by every message sent into it.
+    @ObservationIgnored private var blankCreates: [String: Task<HermesSession, Error>] = [:]
     /// The registry key whose persisted runs were resumed (server + profile); see syncScope().
     @ObservationIgnored private var attachedKey: String?
 
@@ -361,14 +363,25 @@ final class ChatStore {
             guard var r = run(key) else { return }
             if r.session == nil {
                 let stillHereBeforeCreate = isSelected(r)
-                let s = try await client.createSession(title: nil, model: models.pending) // a model picked pre-create
+                // A second message sent while the blank chat is still being created joins the same new chat
+                // instead of creating its own (it was splitting one conversation in two).
+                let ck = "\(r.registryKey)#\(r.blankGen)"
+                let first = blankCreates[ck] == nil
+                let pending = models.pending
+                let create = blankCreates[ck] ?? Task { try await client.createSession(title: nil, model: pending) }
+                if first { blankCreates[ck] = create }
+                let s: HermesSession
+                do { s = try await create.value } catch { if first { blankCreates[ck] = nil }; throw error }
+                if first { blankCreates[ck] = nil }
                 // Detached (scope change) or stopped while creating: don't adopt the session into whatever is open now.
                 try Task.checkCancellation()
                 guard run(key) != nil else { return }
                 if armYolo { setYolo(true, for: s.id) }
-                models.adoptPending(for: s.id)
-                if stillHereBeforeCreate { adoptPendingEvents(for: s.id) }
-                sessions.insert(s, at: 0)
+                if first {
+                    models.adoptPending(for: s.id)
+                    if stillHereBeforeCreate { adoptPendingEvents(for: s.id) }
+                }
+                if !sessions.contains(where: { $0.id == s.id }) { sessions.insert(s, at: 0) }
                 let stillHere = isSelected(r)
                 mutate(key) { $0.session = s.id }
                 if stillHere { selection = s.id; loadedFor = s.id }
@@ -609,9 +622,18 @@ final class ChatStore {
     func stop() {
         guard let client, let r = currentRun else { return }
         let key = r.id
-        if let id = r.runId { app?.run("Stop") { try await client.stopRun(id) } }
-        // Give the server a moment to emit run.cancelled; then let go of THIS run regardless.
         Task {
+            if let id = r.runId {
+                // A failed stop keeps the run followed (and its Stop button): letting go would hide a turn still running.
+                do { try await client.stopRun(id) }
+                catch let e as HermesError where e.status == 404 || e.status == 409 {} // already over
+                catch {
+                    runLog.error("stop failed, still following \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-STOP-ERR]")
+                    app?.flash("Couldn't stop the reply: \(error.localizedDescription)")
+                    return
+                }
+            }
+            // Give the server a moment to emit run.cancelled; then let go of THIS run.
             try? await Task.sleep(for: .seconds(r.runId == nil ? 0 : 5))
             guard run(key) != nil else { return }
             runLog.info("stop: no run.cancelled in time; letting go [ALR-RUN-STOP-LOCAL]")
@@ -911,7 +933,16 @@ final class ChatStore {
             if self.live.contains(where: { $0.session == s.id && ($0.runId.map { !stopped.contains($0) } ?? true) }) {
                 throw DeleteBlocked("This chat kept starting replies. Stop them, then delete it.")
             }
-            try await client.deleteSession(s.id)
+            // Stopped runs release the session's turn lease a moment later; until then DELETE is a 409.
+            var tries = 0
+            while true {
+                do { try await client.deleteSession(s.id); break }
+                catch let e as HermesError where e.status == 409 && tries < 10 {
+                    tries += 1
+                    runLog.info("delete: session still busy, retry \(tries) [ALR-RUN-DEL-WAIT]")
+                    try await Task.sleep(for: .seconds(1))
+                }
+            }
             // Then out of `live` and local state in one synchronous step: nothing may re-attach or re-arm YOLO for
             // it, and a late YOLO answer must not write its events back (tombstone).
             for r in self.live where r.session == s.id {
