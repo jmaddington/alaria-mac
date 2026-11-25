@@ -97,7 +97,7 @@ struct SessionList: View {
         }
         .refreshable { await chats.reload() }
         // Server-side delete has no undo, so confirm (Messages does the same).
-        .confirmationDialog("Delete “\(deleting?.title ?? "this chat")”?",
+        .confirmationDialog("Delete “\(deleting?.displayTitle ?? "this chat")”?",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible) {
             Button("Delete", role: .destructive) { if let d = deleting { chats.delete(d) }; deleting = nil }
@@ -361,8 +361,11 @@ struct EntryView: View {
     static func hasMarkdown(_ t: String) -> Bool {
         MarkdownSpans.spans(in: t).contains { $0.kind != .marker }
     }
-    /// After a stop, drop a dangling marker left at the end ("6").
-    static func trimDanglingMarker(_ t: String) -> String { holdBackPartialMarker(t) }
+    /// Streaming, or cut short (stopped / failed): hide a dangling list marker at the end ("6"). A reply that
+    /// finished normally is shown whole: its last line may really be "5" (hermes-mac-9bg: "1..5" showed 1..4).
+    static func displayText(_ e: ChatEntry) -> String {
+        e.streaming || e.error != nil ? holdBackPartialMarker(e.text) : e.text
+    }
     @Environment(AppModel.self) private var model
     var entry: ChatEntry
     @ViewState private var showThinking = false
@@ -432,7 +435,7 @@ struct EntryView: View {
                         .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 if let a = entry.approval { ApprovalCard(request: a, busy: entry.answeringApproval) { model.chats.answer(a, $0, entry: entry.id) } }
-                if !entry.text.isEmpty { MarkdownView(text: entry.streaming ? Self.holdBackPartialMarker(entry.text) : Self.trimDanglingMarker(entry.text)) }
+                if !entry.text.isEmpty { MarkdownView(text: Self.displayText(entry)) }
                 // Under the text so far, next to the progress line: on a long reply, above the text is off screen.
                 ForEach(Array(entry.steers.enumerated()), id: \.offset) { _, t in
                     Label { Text("Steered: ") + Text(t).italic() } icon: { Image(systemName: "arrow.turn.down.right") }

@@ -4,7 +4,7 @@ import HermesKit
 func runMarkdownChecks() {
     check("markdown: soft-broken lines keep the last line (hermes-mac-9bg)") {
         let b = MarkdownParser.parse("1\n2\n3\n4\n5")
-        expect("\(b)".contains("5"), "\(b)")
+        expect(b == [.paragraph("1\n2\n3\n4\n5")], "\(b)")
     }
     check("markdown: loose numbered list stays one list") {
         let b = MarkdownParser.parse("1. alpha\n\n2. beta\n\n3. gamma")
