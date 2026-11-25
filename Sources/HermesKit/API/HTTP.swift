@@ -62,7 +62,15 @@ public final class HTTPCore: Sendable {
 
     public init(endpoint: Endpoint) {
         self.endpoint = endpoint
+        // AIDEV-NOTE: privacy. No disk cache and no cookies: the default config cached transcripts (and the request's
+        // Authorization header) in ~/Library/Caches/<bundle>/Cache.db. Auth is by header, so cookies aren't needed.
         let cfg = URLSessionConfiguration.default
+        cfg.urlCache = nil
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        cfg.httpCookieStorage = nil
+        cfg.httpShouldSetCookies = false
+        cfg.httpCookieAcceptPolicy = .never
+        cfg.urlCredentialStorage = nil
         cfg.timeoutIntervalForRequest = 60
         cfg.timeoutIntervalForResource = 60 * 60 // streams can run for a long agent turn
         cfg.waitsForConnectivity = false

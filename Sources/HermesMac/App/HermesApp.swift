@@ -1,5 +1,8 @@
+import os
 import AppKit
 import SwiftUI
+
+private let appLog = Logger(subsystem: "net.jmaddington.hermes", category: "app")
 
 @main
 struct HermesApp: App {
@@ -63,7 +66,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SwiftPM executables launch as background processes; promote to a regular foreground app.
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
+        Self.purgeHTTPCache()
         Updater.shared.start()
+    }
+
+    /// Removes the URL cache and cookie file older builds wrote (transcripts and auth headers; HTTPCore no longer caches).
+    /// Runs every launch before anything else makes a request; the browser panel's WebKit data lives elsewhere.
+    static func purgeHTTPCache() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let fm = FileManager.default
+        let lib = fm.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let caches = lib.appendingPathComponent("Caches").appendingPathComponent(id)
+        let targets = ["Cache.db", "Cache.db-shm", "Cache.db-wal", "fsCachedData"].map { caches.appendingPathComponent($0) }
+            + [lib.appendingPathComponent("HTTPStorages").appendingPathComponent(id + ".binarycookies"),
+               lib.appendingPathComponent("HTTPStorages").appendingPathComponent(id)]
+        URLCache.shared.removeAllCachedResponses()
+        for t in targets where fm.fileExists(atPath: t.path) {
+            do { try fm.removeItem(at: t) }
+            catch { appLog.error("cache purge failed for \(t.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-CACHE-PURGE]") }
+        }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
