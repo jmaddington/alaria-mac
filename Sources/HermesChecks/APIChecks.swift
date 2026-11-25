@@ -95,6 +95,15 @@ func liveChecks(_ c: HermesClient) async {
         let after = try await c.sessions()
         expect(!after.items.contains { $0.id == s.id }, "still listed after delete")
     }
+    await asyncCheck("live messages(limit:) returns the newest rows, ascending (hermes-mac-868)") {
+        // Any existing chat with 3+ rows: a 2-row page must end where the full history ends.
+        for s in try await c.sessions(limit: 20).items where (s.messageCount ?? 0) >= 3 {
+            let all = try await c.messages(s.id), page = try await c.messages(s.id, limit: 2)
+            expect(page.count == 2 && page.last?.id == all.last?.id, "page \(page.map(\.id)) vs last \(all.last?.id as Any)")
+            expect(page.map(\.id) == page.map(\.id).sorted(), "not ascending")
+            return
+        }
+    }
     await asyncCheck("live jobs lifecycle") {
         var d = HermesClient.JobDraft(); d.name = "checks job"; d.schedule = "every 2h"; d.prompt = "say hi"
         let j = try await c.createJob(d, paused: true)
