@@ -392,7 +392,7 @@ struct AttachmentTrayView: View {
                     AttachmentChip(attachment: a) { withAnimation(.smooth(duration: 0.2)) { tray.remove(a) } }
                         .transition(.scale(scale: 0.85).combined(with: .opacity))
                 }
-                if tray.loading > 0 { ProgressView().controlSize(.small).padding(.horizontal, 8).accessibilityLabel("Preparing attachment") }
+                if tray.loading > 0 { Spinner(.small).padding(.horizontal, 8).accessibilityLabel("Preparing attachment") }
             }
             .padding(.vertical, 2)
         }

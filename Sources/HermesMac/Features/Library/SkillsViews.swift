@@ -26,7 +26,7 @@ struct SkillsList: View {
                 // AIDEV-NOTE: not .searchable. In the toolbar, the search field + Save/Revert/mode overflowed at narrow
                 // widths and shifted the whole window layout up under the title bar (hermes-mac-x0h).
                 .safeAreaInset(edge: .top, spacing: 0) { InlineSearchField(prompt: "Filter skills", text: $lib.skillFilter) }
-                .overlay { if lib.skills.isEmpty && lib.skillsLoading { ProgressView() } }
+                .overlay { if lib.skills.isEmpty && lib.skillsLoading { Spinner() } }
                 .refreshable { await lib.loadSkills() }
                 .onChange(of: lib.skills) {
                     guard let t = lib.skillScrollTarget, lib.skills.contains(where: { $0.name == t }) else { return }
@@ -112,7 +112,7 @@ struct SkillDetail: View {
                 VStack(spacing: 0) {
                     header(skill)
                     Divider()
-                    if loading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+                    if loading { Spinner().frame(maxWidth: .infinity, maxHeight: .infinity) }
                     else if let loadError {
                         EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't open \(skill.name)", message: loadError, action: ("Try Again", { Task { await load(skill.name) } }))
                     } else if loadedName != skill.name {

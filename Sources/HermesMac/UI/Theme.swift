@@ -136,3 +136,20 @@ struct InlineSearchField: View {
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
 }
+
+/// Indeterminate spinner drawn in SwiftUI. Use this, never ProgressView() (CI greps for it).
+// AIDEV-NOTE: crash fix. macOS ProgressView wraps NSProgressIndicator and SwiftUI calls setFont on it during layout;
+// that re-dirties constraints mid-pass and AppKit throws "too many Update Constraints passes" (0.2.4 crash 2026-11-25).
+struct Spinner: View {
+    enum Size { case mini, small, regular }
+    var size: Size = .regular
+    init(_ size: Size = .regular) { self.size = size }
+
+    var body: some View {
+        Image(systemName: "progress.indicator")
+            .font(.system(size: size == .mini ? 10 : size == .small ? 14 : 24))
+            .foregroundStyle(.secondary)
+            .symbolEffect(.variableColor.iterative.dimInactiveLayers.nonReversing, options: .repeating)
+            .accessibilityLabel("Loading")
+    }
+}

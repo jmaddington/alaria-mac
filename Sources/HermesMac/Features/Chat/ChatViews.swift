@@ -235,7 +235,7 @@ struct ConversationView: View {
             } else if chats.entries.isEmpty && !chats.loadingMessages {
                 Greeting()
             } else if chats.entries.isEmpty {
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+                Spinner(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -516,7 +516,7 @@ struct ToolChip: View {
         Button { open.toggle() } label: {
             HStack(spacing: 6) {
                 switch tool.state {
-                case .running: ProgressView().controlSize(.mini)
+                case .running: Spinner(.mini)
                 case .done: Image(systemName: "checkmark").font(.caption2.weight(.bold)).foregroundStyle(.green)
                 case .failed: Image(systemName: "xmark").font(.caption2.weight(.bold)).foregroundStyle(.red)
                 }
@@ -577,7 +577,7 @@ struct ApprovalCard: View {
                 // AIDEV-NOTE: security; no keyboard shortcut on approval buttons. Return sends in the composer and must
                 // never approve an agent command (security review 2026-11-21).
                 if request.choices.contains("once") { Button("Allow Once") { choose("once") }.buttonStyle(.borderedProminent) }
-                if busy { ProgressView().controlSize(.small) }
+                if busy { Spinner(.small) }
             }
             .disabled(busy) // one answer in flight at a time
         }

@@ -418,7 +418,7 @@ struct ConfigPane: View {
             } else if let loadError {
                 EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load config.yaml", message: loadError, action: ("Try Again", { Task { await load() } })).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if !loaded {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                Spinner().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Text(path ?? "config.yaml").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 TextEditor(text: Binding(get: { yaml }, set: { yaml = $0; model.library.configDraft = $0 == original ? nil : $0 })).font(Font(NSFont.monospacedSystemFont(ofSize: 12, weight: .regular))) // NSTextView ignores .monospaced design

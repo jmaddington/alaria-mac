@@ -271,7 +271,7 @@ struct UsageDetail: View {
                 }
             } else if let usageError {
                 EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load usage", message: usageError)
-            } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
+            } else { Spinner().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         .navigationTitle("Usage")
         .task(id: model.library.usageDays) {

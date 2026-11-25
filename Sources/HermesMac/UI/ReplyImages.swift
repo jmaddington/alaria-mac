@@ -225,7 +225,7 @@ struct ReplyImageView: View {
             case .idle, .loading:
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.quaternary.opacity(0.4))
                     .frame(width: 240, height: 160)
-                    .overlay(ProgressView().controlSize(.small))
+                    .overlay(Spinner(.small))
                     .accessibilityLabel("Loading image")
             case .failed(let msg):
                 notice(icon: "exclamationmark.triangle", title: "Couldn't load image", detail: msg, retry: true)
@@ -349,7 +349,7 @@ struct StoredImageThumb: View {
             } else {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.quaternary.opacity(0.4))
                     .frame(width: 150, height: 150)
-                    .overlay(ProgressView().controlSize(.small))
+                    .overlay(Spinner(.small))
                     .accessibilityLabel("Loading \(attachment.name)")
             }
         }

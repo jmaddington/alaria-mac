@@ -70,7 +70,7 @@ struct ProfileSwitcher: View {
                         Text(ps.label(ps.current)).font(.caption.weight(.medium)).lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    if ps.switching != nil { ProgressView().controlSize(.mini) }
+                    if ps.switching != nil { Spinner(.mini) }
                     else { Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold)).foregroundStyle(.tertiary) }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 7)
@@ -318,7 +318,7 @@ struct ProfileKeySheet: View {
             }
             if let error { Label(error, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange) }
             HStack {
-                if busy { ProgressView().controlSize(.small) }
+                if busy { Spinner(.small) }
                 Spacer()
                 Button("Cancel", role: .cancel) { ps.pendingMessage = nil; ps.keyPrompt = nil; dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -370,7 +370,7 @@ struct ProfilesPane: View {
                     ForEach(ps.profiles) { p in row(p).padding(.vertical, 4) }
                 }
                 .listStyle(.inset)
-                .overlay { if ps.profiles.isEmpty { ProgressView() } }
+                .overlay { if ps.profiles.isEmpty { Spinner() } }
             }
             Divider()
             HStack {
@@ -476,7 +476,7 @@ struct NewProfileSheet: View {
             .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 20)
             if let error { Label(error, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange).padding(.horizontal, 20).padding(.top, 6) }
             HStack {
-                if busy { ProgressView().controlSize(.small) }
+                if busy { Spinner(.small) }
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Create") {

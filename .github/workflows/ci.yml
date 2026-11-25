@@ -28,6 +28,12 @@ jobs:
           path: .build
           key: ${{ runner.os }}-spm-${{ github.repository }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
 
+      # AIDEV-NOTE: macOS ProgressView (NSProgressIndicator) crashed 0.2.4 during layout; use Spinner (Theme.swift).
+      - name: No ProgressView
+        run: |
+          if grep -rn --include='*.swift' 'ProgressView(' Sources/HermesMac | grep -v 'Theme.swift'; then
+            echo "::error title=ProgressView::Use Spinner instead (crash fix, see Theme.swift)"; exit 1; fi
+
       # Unit checks only: live API checks skip themselves without dev/hermes-home/.env.
       - name: Checks
         run: swift run hermes-checks

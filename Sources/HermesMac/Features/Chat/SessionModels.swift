@@ -187,7 +187,7 @@ struct ChatModelMenu: View {
             }
         } label: {
             HStack(spacing: 5) {
-                if let id = chats.selection, ms.switching.contains(id) { ProgressView().controlSize(.mini) }
+                if let id = chats.selection, ms.switching.contains(id) { Spinner(.mini) }
                 else { Image(systemName: "cpu") }
                 Text(choice?.label ?? (chats.selection == nil ? "Server default" : "Model")).lineLimit(1)
             }
