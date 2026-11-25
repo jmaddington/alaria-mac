@@ -98,12 +98,14 @@ public final class HermesClient: Sendable {
         return r.session
     }
 
-    public func messages(_ id: String, limit: Int = 500) async throws -> [HermesMessage] {
+    /// The newest `limit` rows (ascending), skipping the newest `offset` first: offset=500 is the page before them.
+    /// No has_more on this endpoint: callers infer more = (count == limit).
+    public func messages(_ id: String, limit: Int = 500, offset: Int = 0) async throws -> [HermesMessage] {
         // AIDEV-NOTE: order=latest is required. With a limit and no order the server returns the OLDEST `limit` rows,
         // so a long chat opened on its first 500 (verified on the dev server 2026-11-24). order=latest returns the
         // newest `limit` rows, still in ascending order (hermes-mac-868, reported by the iOS review).
         let r: ListEnvelope<HermesMessage> = try await api.get("/api/sessions/\(Self.path(id))/messages",
-                                                               query: ["limit": "\(limit)", "order": "latest"])
+                                                               query: ["limit": "\(limit)", "order": "latest", "offset": "\(offset)"])
         return r.data
     }
 

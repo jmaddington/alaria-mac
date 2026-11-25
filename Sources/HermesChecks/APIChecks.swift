@@ -101,6 +101,8 @@ func liveChecks(_ c: HermesClient) async {
             let all = try await c.messages(s.id), page = try await c.messages(s.id, limit: 2)
             expect(page.count == 2 && page.last?.id == all.last?.id, "page \(page.map(\.id)) vs last \(all.last?.id as Any)")
             expect(page.map(\.id) == page.map(\.id).sorted(), "not ascending")
+            let earlier = try await c.messages(s.id, limit: 1, offset: 2)
+            expect(earlier.first?.id == all[all.count - 3].id, "offset 2 gave \(earlier.map(\.id)), want \(all[all.count - 3].id)")
             return
         }
     }
