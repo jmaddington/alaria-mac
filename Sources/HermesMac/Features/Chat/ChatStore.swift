@@ -242,8 +242,9 @@ final class ChatStore {
     func quietRefresh() async {
         guard let client, searchText.isEmpty, Date().timeIntervalSince(lastQuietReload) > 12 else { return }
         lastQuietReload = .now
-        let scope = registryKey
-        guard let items = try? await client.sessions(limit: 200).items, scope == registryKey else { return }
+        syncScope()
+        let scope = registryKey, gen = scopeGen
+        guard let items = try? await client.sessions(limit: 200).items, scope == registryKey, gen == scopeGen else { return }
         let fresh = items.filter { $0.hidden != true }
             .sorted { ($0.pinned == true ? 1 : 0, $0.activityDate) > ($1.pinned == true ? 1 : 0, $1.activityDate) }
         let before = selection.flatMap { sel in sessions.first { $0.id == sel }?.activityDate }
@@ -749,6 +750,7 @@ final class ChatStore {
     private func detachAll() {
         scopeGen += 1
         historyCache = [:]; historyOrder = []; unread = []
+        drafts = [:] // parked drafts belong to the old server/profile: never resurface them on another
         // Their approval cards go with them: a notification left up must not answer through the new connection.
         for r in live { if let a = r.reply.approval { app?.notifier.approvalResolved(a) } }
         for t in liveTasks.values { t.cancel() }
