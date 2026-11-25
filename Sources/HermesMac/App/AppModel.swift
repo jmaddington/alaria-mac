@@ -221,6 +221,14 @@ final class AppModel {
         browser.agent.startIfEnabled() // loopback MCP server for Hermes, only when the user allowed it
         if settings.isConfigured { connect() } else { showOnboarding = true }
         installVoiceTestHarness()
+        // Coming back to the app: pick up chats started elsewhere, and the open chat's reply is now "read".
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if let sel = self.chats.selection { self.chats.unread.remove(sel) }
+                if case .connected = self.connection { Task { await self.chats.quietRefresh() } }
+            }
+        }
     }
 
     /// Voice test seam: `HERMES_VOICE_TEST=1` at launch lets scripts/voice-inject.swift feed an audio file into
@@ -307,7 +315,11 @@ final class AppModel {
             switch connection {
             case .failed: connect() // auto-retry; connect() keeps this monitor
             case .connected:
-                do { _ = try await client.health(); await notifier.pollCron() } // cron notifications: no server push
+                do {
+                    _ = try await client.health()
+                    await notifier.pollCron() // cron notifications: no server push
+                    if section == .chats || section == nil { await chats.quietRefresh() } // chats made elsewhere show up
+                }
                 catch { if case .connected = connection { connection = .failed(error.localizedDescription) } }
             default: break
             }

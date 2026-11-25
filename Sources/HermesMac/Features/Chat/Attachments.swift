@@ -185,6 +185,7 @@ final class AttachmentTray {
 
     func remove(_ a: Attachment) { items.removeAll { $0.id == a.id } }
     func clear() { items = [] }
+    func replace(_ new: [Attachment]) { items = new }
 
     func add(urls: [URL], app: AppModel?) {
         guard !urls.isEmpty else { return }

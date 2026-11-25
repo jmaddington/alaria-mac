@@ -168,7 +168,10 @@ struct SessionRow: View {
                 if session.source == "cron" {
                     Image(systemName: "clock").font(.caption2).foregroundStyle(.secondary).help("Scheduled job run").accessibilityLabel("Scheduled job run")
                 }
-                Text(title).font(.body.weight(.medium)).lineLimit(1)
+                if unread {
+                    Circle().fill(Theme.accent).frame(width: 7, height: 7).help("New reply").accessibilityLabel("New reply")
+                }
+                Text(title).font(.body.weight(unread ? .bold : .medium)).lineLimit(1)
                 Spacer(minLength: 4)
                 // A reply Alaria is following (any chat, not just the open one); other clients' runs aren't visible.
                 if model.chats.runningSessions.contains(session.id) {
@@ -193,6 +196,7 @@ struct SessionRow: View {
         .padding(.vertical, 3)
     }
     private var run: LiveRun? { model.chats.liveRun(for: session.id) }
+    private var unread: Bool { model.chats.unread.contains(session.id) }
     /// A brand-new chat has no title or preview until the server catches up: show what was asked meanwhile.
     private var title: String {
         if (session.title ?? "").isEmpty, (session.preview ?? "").isEmpty, let t = run?.user.text, !t.isEmpty {
@@ -230,6 +234,8 @@ struct ConversationView: View {
                 EmptyState(symbol: "exclamationmark.triangle", title: "Couldn't load this chat", message: err, action: ("Try Again", { chats.retryMessages() })).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if chats.entries.isEmpty && !chats.loadingMessages {
                 Greeting()
+            } else if chats.entries.isEmpty {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -271,7 +277,9 @@ struct ConversationView: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
                     .onChange(of: visibleEntries.count) {
-                        followTail = true
+                        // Your own new message brings you down; a queued turn starting or a reload doesn't yank you.
+                        if visibleEntries.last?.role == .user { followTail = true }
+                        guard followTail else { return }
                         proxy.scrollTo("bottom", anchor: .bottom)
                         // Lazy rows above get measured after the first jump; land again once they have.
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo("bottom", anchor: .bottom) }
@@ -281,6 +289,17 @@ struct ConversationView: View {
                         proxy.scrollTo("bottom", anchor: .bottom)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
+                    .overlay(alignment: .bottomTrailing) {
+                        if !followTail {
+                            JumpToLatest(waiting: chats.entries.contains { $0.approval != nil }) {
+                                followTail = true
+                                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                            }
+                            .padding(.trailing, 20).padding(.bottom, 12)
+                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.15), value: followTail)
                 }
             }
             Composer()
@@ -784,11 +803,31 @@ extension ChatEntry {
     /// What a running reply is doing right now, for the chat list row and the reply's own footer.
     var progressText: String? {
         guard streaming else { return nil }
+        if stopping { return "Stopping…" }
         if approval != nil { return "Waiting for your approval" }
         if let t = tools.last(where: { $0.state == .running }) { return "Running \(t.name.replacingOccurrences(of: "_", with: " "))…" }
         if !text.isEmpty { return "Writing…" }
         if !thinking.isEmpty { return "Thinking…" }
         if !tools.isEmpty { return "Working…" }
         return "Starting…"
+    }
+}
+
+/// Shown while you're reading further up: back to the newest message (marked when an approval waits below).
+struct JumpToLatest: View {
+    var waiting: Bool
+    var action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "arrow.down").font(.body.weight(.semibold)).frame(width: 32, height: 32)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(.separator.opacity(0.6)))
+                .overlay(alignment: .topTrailing) {
+                    if waiting { Circle().fill(.orange).frame(width: 9, height: 9).offset(x: 1, y: -1) }
+                }
+        }
+        .buttonStyle(.plain)
+        .help(waiting ? "Jump to latest: an approval is waiting" : "Jump to latest")
+        .accessibilityLabel(waiting ? "Jump to latest, approval waiting" : "Jump to latest")
     }
 }

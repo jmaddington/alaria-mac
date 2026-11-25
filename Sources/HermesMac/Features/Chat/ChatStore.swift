@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import HermesKit
 import Observation
@@ -25,6 +26,8 @@ struct ChatEntry: Identifiable, Equatable {
     var approvalAnswerSent = false
     var answeringApproval = false
     var streaming = false
+    /// Stop was pressed; the footer says "Stopping…" until the run ends (or the stop fails).
+    var stopping = false
     var error: String?
     var date: Date?
     /// A turn sent while another was running, waiting its turn server-side (busy input "queue"). The user entry
@@ -77,6 +80,14 @@ final class ChatStore {
     var draft = ""
     /// Composer attachments waiting to be sent (Attachments.swift).
     let attachments = AttachmentTray()
+    /// Unsent drafts of the chats not on screen ("" = the blank chat), swapped in and out by select()/newChat().
+    @ObservationIgnored private var drafts: [String: (text: String, files: [Attachment])] = [:]
+    /// Chats whose reply finished while they weren't on screen (list shows a dot until opened).
+    var unread: Set<String> = []
+    /// Last loaded history of recently opened chats, shown at once on re-selection while the fresh copy loads.
+    @ObservationIgnored private var historyCache: [String: [ChatEntry]] = [:]
+    @ObservationIgnored private var historyOrder: [String] = []
+    @ObservationIgnored private var lastQuietReload = Date.distantPast
     /// Per-chat model locks + the picker inventory (SessionModels.swift).
     let models = SessionModels()
     var searchText = ""
@@ -163,6 +174,8 @@ final class ChatStore {
         // AIDEV-NOTE: emptying entries here blanked the transcript for good (LazyVStack at a stale offset) until
         // the chat was re-selected. Only the swap below may replace them.
         let inPlace = id != nil && id == selection
+        if !inPlace { swapDraft(from: selection, to: id) }
+        if let id { unread.remove(id) }
         // Leaving a chat with a running reply just stops showing it: the run goes on server-side (hermes-mac-wny).
         selection = id
         loadedFor = id
@@ -170,7 +183,12 @@ final class ChatStore {
         if inPlace {
             let have = Set(entries.map(\.id))
             entries += liveEntries(for: id).filter { !have.contains($0.id) }
-        } else { entries = liveEntries(for: id) }
+        } else {
+            // A chat seen recently shows its last history at once (no blank pane); the swap below refreshes it.
+            let cached = id.flatMap { historyCache[$0] } ?? []
+            let have = Set(cached.map(\.id))
+            entries = cached + liveEntries(for: id).filter { !have.contains($0.id) }
+        }
         guard let id, let client else { return }
         loadingMessages = true
         // Captured before the await: a run that finishes during it still has its turn on screen (dev-40 review #5).
@@ -189,6 +207,7 @@ final class ChatStore {
                 let cut = RunHistory.cut(msgs, liveRunsCreatedAt: starts)
                 // Keep anything sent while history was loading (hermes-mac-7j1): history goes in front of it.
                 let history = mergeEvents(Self.entries(from: cut), session: id)
+                cacheHistory(history, for: id)
                 let known = Set(history.map(\.id))
                 // Only live turns survive the swap (a refresh still holds the old history rows, under old ids).
                 let liveIDs = Set(runs.flatMap { [$0.user.id, $0.reply.id] })
@@ -198,6 +217,42 @@ final class ChatStore {
                 loadedFor = nil // so selecting it again retries
                 messagesError = error.localizedDescription
             }
+        }
+    }
+
+    private func cacheHistory(_ h: [ChatEntry], for id: String) {
+        historyCache[id] = h
+        historyOrder.removeAll { $0 == id }
+        historyOrder.append(id)
+        while historyOrder.count > 12 { historyCache[historyOrder.removeFirst()] = nil }
+    }
+
+    /// Parks the composer's draft under the chat being left and brings back the one saved for the chat opened.
+    private func swapDraft(from old: String?, to new: String?) {
+        let ko = old ?? "", kn = new ?? ""
+        guard ko != kn else { return }
+        drafts[ko] = draft.isEmpty && attachments.isEmpty ? nil : (draft, attachments.items)
+        let d = drafts.removeValue(forKey: kn)
+        draft = d?.text ?? ""
+        attachments.replace(d?.files ?? [])
+    }
+
+    /// The list, quietly (no toast on failure, throttled): on app activation and from the connection monitor, so
+    /// chats started on the phone, by cron or in another client show up without Cmd-R.
+    func quietRefresh() async {
+        guard let client, searchText.isEmpty, Date().timeIntervalSince(lastQuietReload) > 12 else { return }
+        lastQuietReload = .now
+        let scope = registryKey
+        guard let items = try? await client.sessions(limit: 200).items, scope == registryKey else { return }
+        let fresh = items.filter { $0.hidden != true }
+            .sorted { ($0.pinned == true ? 1 : 0, $0.activityDate) > ($1.pinned == true ? 1 : 0, $1.activityDate) }
+        let before = selection.flatMap { sel in sessions.first { $0.id == sel }?.activityDate }
+        if fresh != sessions { sessions = fresh }
+        // The open chat moved on elsewhere (no reply of ours running in it): fetch its history in place.
+        if let sel = selection, let before, !live.contains(where: { $0.session == sel }),
+           let now = fresh.first(where: { $0.id == sel }), now.activityDate > before {
+            loadedFor = nil
+            select(sel)
         }
     }
 
@@ -250,13 +305,12 @@ final class ChatStore {
 
     func newChat() {
         messagesError = nil
+        swapDraft(from: selection, to: nil) // the chat left keeps its draft; the blank chat gets its own back
         blankGen += 1 // a reply still creating its chat stays in that chat, not this new one
         selection = nil
         yoloNewChat = false
         loadedFor = nil
         entries = []
-        draft = ""
-        attachments.clear()
         models.pending = nil // new chats follow the server's default unless a model is picked for them
         pendingEvents = []
         // The server's default can change (Settings > Model, another client): refresh what the menu shows.
@@ -586,6 +640,7 @@ final class ChatStore {
         mutate(key) { $0.reply.streaming = false; $0.reply.queued = false; $0.user.queued = false }
         if r.withdrawn { entries.removeAll { $0.id == r.user.id || $0.id == r.reply.id } }
         if let sid = r.session, !r.withdrawn { app?.notifier.replyEnded(session: sid, entry: key, cancelled: false) }
+        if let sid = r.session, !r.withdrawn, sid != selection || !NSApp.isActive { unread.insert(sid) }
         // Stored history has no record of an approval left unanswered: keep it as a chat event (audit trail), dated
         // when it came up. Auto-approvals are saved as they happen (autoApprove). An answer that was in flight is
         // reported as unknown, not as "not run".
@@ -622,12 +677,14 @@ final class ChatStore {
     func stop() {
         guard let client, let r = currentRun else { return }
         let key = r.id
+        mutate(key) { $0.reply.stopping = true }
         Task {
             if let id = r.runId {
                 // A failed stop keeps the run followed (and its Stop button): letting go would hide a turn still running.
                 do { try await client.stopRun(id) }
                 catch let e as HermesError where e.status == 404 || e.status == 409 {} // already over
                 catch {
+                    mutate(key) { $0.reply.stopping = false }
                     runLog.error("stop failed, still following \(id, privacy: .public): \(error.localizedDescription, privacy: .public) [ALR-RUN-STOP-ERR]")
                     app?.flash("Couldn't stop the reply: \(error.localizedDescription)")
                     return
@@ -691,6 +748,7 @@ final class ChatStore {
 
     private func detachAll() {
         scopeGen += 1
+        historyCache = [:]; historyOrder = []; unread = []
         // Their approval cards go with them: a notification left up must not answer through the new connection.
         for r in live { if let a = r.reply.approval { app?.notifier.approvalResolved(a) } }
         for t in liveTasks.values { t.cancel() }
@@ -956,6 +1014,7 @@ final class ChatStore {
             self.yoloVersion += 1
             if self.selection == s.id { self.newChat() }
             self.sessions.removeAll { $0.id == s.id }
+            self.drafts[s.id] = nil; self.historyCache[s.id] = nil; self.unread.remove(s.id)
         }
     }
 
