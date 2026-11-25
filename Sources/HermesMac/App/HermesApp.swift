@@ -22,6 +22,13 @@ struct HermesApp: App {
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") { Updater.shared.checkForUpdates() }.disabled(!Updater.shared.canCheck)
             }
+            CommandGroup(after: .help) {
+                Button("Show Diagnostic Reports") {
+                    let f = HangWatchdog.folder
+                    try? FileManager.default.createDirectory(at: f, withIntermediateDirectories: true)
+                    NSWorkspace.shared.open(f)
+                }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("New Chat") { model.section = .chats; model.chats.newChat() }.keyboardShortcut("n")
             }
@@ -68,6 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         Self.purgeHTTPCache()
         Updater.shared.start()
+        HangWatchdog.shared.start()
+        HangWatchdog.shared.runSelfTestIfAsked()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { HangWatchdog.shared.offerNewReports() }
     }
 
     /// Removes the URL cache and cookie file older builds wrote (transcripts and auth headers; HTTPCore no longer caches).
