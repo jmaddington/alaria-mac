@@ -265,8 +265,9 @@ struct ConversationView: View {
                     .onScrollGeometryChange(for: ScrollSpot.self) { g in
                         ScrollSpot(offset: g.contentOffset.y, gap: g.contentSize.height - (g.contentOffset.y + g.containerSize.height))
                     } action: { old, new in
-                        if userScrolling && new.offset < old.offset - 1 { followTail = false }
-                        else if new.gap <= 24 { followTail = true }
+                        // Only write on a real change: this runs on every layout pass.
+                        if userScrolling && new.offset < old.offset - 1 { if followTail { followTail = false } }
+                        else if new.gap <= 24, !followTail { followTail = true }
                     }
                     .onChange(of: chats.entries.last(where: \.streaming)?.text ?? chats.entries.last?.text) { if followTail { proxy.scrollTo("bottom", anchor: .bottom) } }
                     // Keyed on what's VISIBLE, not entries.count: a queued reply appearing when its run starts, or a
@@ -289,17 +290,22 @@ struct ConversationView: View {
                         proxy.scrollTo("bottom", anchor: .bottom)
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { proxy.scrollTo("bottom", anchor: .bottom) }
                     }
+                    // AIDEV-NOTE: perf/hang fix. Animate ONLY this button. An .animation(value: followTail) on the
+                    // ScrollView animated every lazy row whenever follow flipped (on send), and 0.2.3/0.2.4 spun the
+                    // main thread at 100% CPU in LazyVStack placement until force-quit (2026-11-25).
                     .overlay(alignment: .bottomTrailing) {
-                        if !followTail {
-                            JumpToLatest(waiting: chats.entries.contains { $0.approval != nil }) {
-                                followTail = true
-                                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("bottom", anchor: .bottom) }
+                        ZStack {
+                            if !followTail {
+                                JumpToLatest(waiting: chats.entries.contains { $0.approval != nil }) {
+                                    followTail = true
+                                    proxy.scrollTo("bottom", anchor: .bottom)
+                                }
+                                .padding(.trailing, 20).padding(.bottom, 12)
+                                .transition(.opacity.combined(with: .scale(scale: 0.9)))
                             }
-                            .padding(.trailing, 20).padding(.bottom, 12)
-                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
                         }
+                        .animation(.easeOut(duration: 0.15), value: followTail)
                     }
-                    .animation(.easeOut(duration: 0.15), value: followTail)
                 }
             }
             Composer()
@@ -590,7 +596,7 @@ struct ApprovalCard: View {
 struct TypingIndicator: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
-        TimelineView(.animation(paused: reduceMotion)) { ctx in
+        TimelineView(.animation(minimumInterval: 1 / 15, paused: reduceMotion)) { ctx in // 15 fps: lives inside the transcript LazyVStack
             let t = ctx.date.timeIntervalSinceReferenceDate
             HStack(spacing: 5) {
                 ForEach(0..<3) { i in
